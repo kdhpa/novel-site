@@ -1,0 +1,14 @@
+{
+  "name": "@novelverse/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./content-security-policy": "./src/content-security-policy.ts",
+    "./proxy": "./src/proxy.ts"
+  },
+  "dependencies": {
+    "@novelverse/db": "0.1.0"
+  }
+}

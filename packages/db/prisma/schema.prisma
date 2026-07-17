@@ -1,0 +1,468 @@
+// Prisma schema for NovelVerse - Web Novel Platform with AI image generation
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  AUTHOR
+  ADMIN
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum Genre {
+  FANTASY
+  ROMANCE
+  SF
+  MARTIAL_ARTS
+  MYSTERY
+  HORROR
+  MODERN
+  OTHER
+}
+
+enum Status {
+  ONGOING
+  COMPLETED
+  HIATUS
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  emailNormalized  String    @unique @default(dbgenerated())
+  emailVerified    DateTime?
+  password         String?
+  passwordChangedAt DateTime?
+  name             String?
+  nickname         String?   @unique
+  nicknameNormalized String? @unique
+  image            String?
+  bio              String?
+  role             Role      @default(USER)
+  isVerifiedAuthor Boolean   @default(false)
+  verifiedAt       DateTime?
+  suspendedAt      DateTime?
+  suspensionReason String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  novels         Novel[]
+  reviewedNovels Novel[]          @relation("ReviewedNovels")
+  bookmarks      Bookmark[]
+  likes          Like[]
+  reviews        Review[]
+  comments       Comment[]
+  readingHistory ReadingHistory[]
+  adminAuditLogs AdminAuditLog[] @relation("AdminAuditLogs")
+  imageGenerationJobs ImageGenerationJob[]
+  contentReports ContentReport[] @relation("ContentReportReporter")
+
+  @@index([createdAt, id])
+  @@index([role, createdAt, id])
+  @@index([suspendedAt, createdAt, id])
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_email_trgm_idx")
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_name_trgm_idx")
+  @@index([nickname(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_nickname_trgm_idx")
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Season {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String?  @db.Text
+  coverImage  String?
+  startsAt    DateTime
+  endsAt      DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  novels Novel[]
+
+  @@index([isActive])
+  @@index([isActive, startsAt, endsAt])
+  @@index([createdAt])
+  @@index([startsAt, id])
+  @@map("seasons")
+}
+
+model Novel {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?        @db.Text
+  coverImage     String?
+  genres         Genre[]        @default([])
+  status         Status         @default(ONGOING)
+  viewCount      Int            @default(0)
+  likeCount      Int            @default(0)
+  isPublished    Boolean        @default(false)
+  approvalStatus ApprovalStatus @default(DRAFT)
+  approvalNote   String?
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  authorId     String
+  author       User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reviewedById String?
+  reviewedBy   User?   @relation("ReviewedNovels", fields: [reviewedById], references: [id])
+  seasonId     String?
+  season       Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+
+  chapters       Chapter[]
+  bookmarks      Bookmark[]
+  likes          Like[]
+  reviews        Review[]
+  comments       Comment[]
+  tags           TagsOnNovels[]
+  readingHistory ReadingHistory[]
+  characters     Character[]
+  imageGenerationJobs ImageGenerationJob[]
+
+  @@index([authorId])
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([seasonId])
+  @@index([updatedAt, id])
+  @@index([authorId, updatedAt])
+  @@index([approvalStatus, updatedAt, id])
+  @@index([isPublished, approvalStatus, viewCount, id])
+  @@index([isPublished, approvalStatus, likeCount, id])
+  @@index([isPublished, approvalStatus, createdAt, id])
+  @@index([isPublished, approvalStatus, updatedAt, id])
+  @@index([approvalStatus, submittedAt, createdAt, id])
+  @@index([authorId, isPublished, approvalStatus, viewCount, id])
+  @@index([seasonId, isPublished, approvalStatus, updatedAt, id])
+  @@index([genres], type: Gin)
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "novels_title_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "novels_description_trgm_idx")
+  @@map("novels")
+}
+
+model Character {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?  @db.Text
+  appearance     String   @db.Text
+  personality    String?  @db.Text
+  role           String?
+  portraitUrl    String?
+  portraitPrompt String?  @db.Text
+
+  novelId String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([novelId])
+  @@index([novelId, createdAt])
+  @@index([novelId, createdAt, id])
+  @@map("characters")
+}
+
+model Chapter {
+  id            String   @id @default(cuid())
+  chapterNumber Int
+  title         String
+  content       String   @db.Text
+  aiImage       String?
+  aiImagePrompt String?
+  viewCount     Int      @default(0)
+  isPublished   Boolean  @default(false)
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  novelId String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([novelId, chapterNumber])
+  @@index([novelId])
+  @@index([novelId, isPublished, chapterNumber])
+  @@map("chapters")
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId  String
+  novelId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId])
+  @@index([userId, createdAt])
+  @@index([novelId])
+  @@map("bookmarks")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId  String
+  novelId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId])
+  @@index([userId, createdAt])
+  @@index([novelId])
+  @@map("likes")
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  rating     Int
+  content    String   @db.Text
+  hasSpoiler Boolean  @default(false)
+  isHidden   Boolean  @default(false)
+  moderationReason String? @db.Text
+  moderatedAt DateTime?
+  moderatedById String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userId  String
+  novelId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId])
+  @@index([novelId])
+  @@index([userId])
+  @@index([novelId, createdAt])
+  @@index([novelId, createdAt, id])
+  @@index([userId, updatedAt])
+  @@index([isHidden, createdAt, id])
+  @@map("reviews")
+}
+
+model ReadingHistory {
+  id          String   @id @default(cuid())
+  lastChapter Int
+  updatedAt   DateTime @updatedAt
+
+  userId  String
+  novelId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId])
+  @@index([userId])
+  @@index([userId, updatedAt])
+  @@map("reading_history")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  isHidden  Boolean  @default(false)
+  moderationReason String? @db.Text
+  moderatedAt DateTime?
+  moderatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId  String
+  novelId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([novelId])
+  @@index([userId])
+  @@index([parentId, createdAt, id])
+  @@index([novelId, parentId, createdAt, id])
+  @@index([isHidden, createdAt, id])
+  @@map("comments")
+}
+
+model ContentReport {
+  id           String   @id @default(cuid())
+  reporterId   String?
+  reporter     User?    @relation("ContentReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  targetType   String
+  targetId     String
+  reason       String
+  details      String?  @db.Text
+  targetSnapshot Json?
+  status       String   @default("open")
+  resolution   String?  @db.Text
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt, id])
+  @@index([targetType, targetId])
+  @@map("content_reports")
+}
+
+model Tag {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  normalizedName String         @unique @default(dbgenerated())
+  novels         TagsOnNovels[]
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "tags_name_trgm_idx")
+  @@map("tags")
+}
+
+model TagsOnNovels {
+  novelId String
+  tagId   String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, tagId])
+  @@index([tagId])
+  @@map("tags_on_novels")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String?
+  admin      User?    @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String
+  message    String   @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt, id])
+  @@map("admin_audit_logs")
+}
+
+// Database-backed request throttling. Keeping the active bucket in PostgreSQL
+// makes limits consistent across serverless instances and rolling deploys.
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
+}
+
+// A privacy-preserving, daily uniqueness record used before incrementing the
+// denormalized view counters on novels and chapters.
+model ContentView {
+  id          String   @id @default(cuid())
+  targetType  String
+  targetId    String
+  viewerHash  String
+  bucketStart DateTime
+  createdAt   DateTime @default(now())
+
+  @@unique([targetType, targetId, viewerHash, bucketStart])
+  @@index([createdAt])
+  @@index([targetType, targetId, bucketStart])
+  @@map("content_views")
+}
+
+// Provider jobs and their permanent-storage result survive process restarts.
+// The short finalization lease prevents separate instances from downloading
+// and uploading the same provider output at the same time.
+model ImageGenerationJob {
+  id                     String   @id @default(cuid())
+  providerPredictionId   String?  @unique
+  clientRequestId        String
+  tokenNonce             String   @unique
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novelId                String?
+  novel                  Novel?   @relation(fields: [novelId], references: [id], onDelete: SetNull)
+  type                    String
+  prompt                  String   @db.Text
+  status                  String   @default("starting")
+  imageUrl                String?
+  providerImageUrl        String?
+  storageProvider         String   @default("none")
+  error                   String?  @db.Text
+  metadata                Json?
+  tokenExpiresAt          DateTime
+  finalizationLeaseUntil  DateTime?
+  finalizationLeaseToken  String?
+  finalizationAttempts    Int      @default(0)
+  nextFinalizationAt      DateTime?
+  lastFinalizationError   String?  @db.Text
+  targetBoundAt           DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([novelId, createdAt])
+  @@index([status, updatedAt])
+  @@index([tokenExpiresAt])
+  @@unique([userId, clientRequestId])
+  @@map("image_generation_jobs")
+}
