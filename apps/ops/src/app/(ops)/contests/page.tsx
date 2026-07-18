@@ -2,6 +2,7 @@ import { prisma } from '@novelverse/db';
 import ContestManager from './ContestManager';
 import Pagination from '../Pagination';
 import { parsePage } from '@/lib/pagination';
+import { requireOpsAdmin } from '@/lib/api';
 
 export const metadata = {
   title: '공모전 관리',
@@ -10,6 +11,7 @@ export const metadata = {
 const PAGE_SIZE = 30;
 
 export default async function OpsContestsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const admin = await requireOpsAdmin();
   const params = await searchParams;
   const page = parsePage(params.page);
   const [contests, total] = await Promise.all([
@@ -41,6 +43,7 @@ export default async function OpsContestsPage({ searchParams }: { searchParams: 
       </div>
 
       <ContestManager
+        adminUserId={admin.id}
         contests={contests.map((contest) => ({
           id: contest.id,
           slug: contest.slug,
