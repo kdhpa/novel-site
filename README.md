@@ -128,25 +128,24 @@ Gemini 호출과 `/api/health`가 fail-closed 됩니다. 개발 환경에는 이
 
 ## 배포
 
-`web`과 `ops`는 독립 배포 단위입니다.
-Vercel 모노레포 운영 절차와 GitHub `production` 설정은
+운영 배포 대상은 `web` 하나뿐입니다. Vercel과 GitHub `production` 설정은
 [Vercel 배포 가이드](./docs/vercel-deployment.md)를 따릅니다.
 
 - Web Vercel Root Directory: `apps/web`
-- Ops Vercel Root Directory: `apps/ops`
+- Ops는 외부에 배포하지 않고 `npm run dev:ops`의 `http://localhost:3002`에서만 사용
+- `apps/ops/vercel.json`은 실수로 만든 Vercel 배포를 빌드 단계에서 차단
+- `NEXT_PUBLIC_OPS_URL`은 로컬 개발 전용이며 Vercel Web 프로젝트에는 설정하지 않음
 - migration은 앱 배포 전에 한 번만 `npm run prisma:deploy`로 실행
-- Ops는 별도 도메인과 접근 제어를 사용하고 검색 색인을 금지
 
 배포 전 체크리스트:
 
 1. CI의 migration, lint, typecheck, test, build, production audit가 모두 통과
-2. `/api/health`에서 DB·스토리지·신뢰 프록시 설정 상태 확인
-3. OAuth callback URL과 앱별 `NEXTAUTH_URL`/`AUTH_URL` 확인
+2. Web `/api/health`에서 DB·스토리지·신뢰 프록시 설정 상태 확인
+3. Web OAuth callback URL과 `NEXTAUTH_URL` 확인
 4. 이미지·AI 공급자별 예산, rate limit, 오류율 알림 확인
 5. 배포 후 회원가입 → 작성 → 심사 → 공개 읽기 smoke test
-6. Ops의 심사 상세에서 모든 회차 본문을 연 뒤 승인 확인 절차 smoke test
-7. `BACKUP_RETENTION_DAYS`를 실제 DB·스토리지 공급자의 자동 삭제 주기와 일치시키고 복원 테스트
-8. 개인정보 안내의 신고·감사·AI 공급자 보존 조건이 실제 운영 계약과 일치하는지 확인
+6. `BACKUP_RETENTION_DAYS`를 실제 DB·스토리지 공급자의 자동 삭제 주기와 일치시키고 복원 테스트
+7. 개인정보 안내의 신고·감사·AI 공급자 보존 조건이 실제 운영 계약과 일치하는지 확인
 
 ## 보안 원칙
 
