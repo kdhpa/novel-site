@@ -15,13 +15,19 @@ export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return NextResponse.json(
-      { status: 'ok', release: process.env.RELEASE_SHA || null },
+      {
+        status: 'ok',
+        release: process.env.RELEASE_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
+      },
       responseInit,
     );
   } catch (error) {
     logServerError('ops-health.database', error);
     return NextResponse.json(
-      { status: 'unhealthy', release: process.env.RELEASE_SHA || null },
+      {
+        status: 'unhealthy',
+        release: process.env.RELEASE_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
+      },
       { ...responseInit, status: 503 },
     );
   }

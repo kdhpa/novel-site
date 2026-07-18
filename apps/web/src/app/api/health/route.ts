@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       status: healthy ? (degraded ? 'degraded' : 'ok') : 'unhealthy',
-      release: process.env.RELEASE_SHA || null,
+      release: process.env.RELEASE_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
       requestId,
       timestamp: new Date().toISOString(),
       checks,

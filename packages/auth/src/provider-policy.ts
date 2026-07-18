@@ -8,8 +8,7 @@ type OpsAccountState = {
 } | null | undefined;
 
 export function isOpsPasswordLoginEnabled(env: AuthEnvironment = process.env) {
-  const googleConfigured = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
-  if (env.NODE_ENV === 'production' && googleConfigured) {
+  if (env.NODE_ENV === 'production') {
     return env.OPS_ALLOW_PASSWORD_LOGIN === 'true';
   }
   return true;

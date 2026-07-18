@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import {
+  COVER_FILE_SIZE_LABEL,
+  MAX_COVER_FILE_BYTES,
+} from '@/lib/cover-upload-limits';
 import { getCoverImageJobStorageKey } from '@/lib/client/cover-image-jobs';
 import {
   createImageJobClientRequestId,
@@ -448,8 +452,8 @@ export default function CoverImageManager({
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('파일 크기는 5MB 이하여야 합니다.');
+    if (file.size > MAX_COVER_FILE_BYTES) {
+      setError(`파일 크기는 ${COVER_FILE_SIZE_LABEL} 이하여야 합니다.`);
       return;
     }
 
@@ -956,7 +960,7 @@ export default function CoverImageManager({
               </Button>
 
               <p className="mt-4 text-xs text-zinc-500">
-                PNG, JPG, GIF (최대 5MB)
+                PNG, JPG, GIF, WEBP (최대 {COVER_FILE_SIZE_LABEL})
               </p>
             </div>
           )}

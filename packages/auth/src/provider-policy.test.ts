@@ -14,6 +14,11 @@ describe('Ops provider policy', () => {
     };
     expect(isOpsPasswordLoginEnabled(production)).toBe(false);
     expect(isOpsPasswordLoginEnabled({ ...production, OPS_ALLOW_PASSWORD_LOGIN: 'true' })).toBe(true);
+    expect(isOpsPasswordLoginEnabled({ NODE_ENV: 'production' })).toBe(false);
+    expect(isOpsPasswordLoginEnabled({
+      NODE_ENV: 'production',
+      OPS_ALLOW_PASSWORD_LOGIN: 'true',
+    })).toBe(true);
     expect(isOpsPasswordLoginEnabled({ NODE_ENV: 'development' })).toBe(true);
   });
 
