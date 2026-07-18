@@ -32,13 +32,18 @@ async function expectApiData<T>(response: APIResponse): Promise<T> {
 
 async function logIn(page: Page, origin: string, email: string, callbackPath: string) {
   await page.goto(`${origin}/login?callbackUrl=${encodeURIComponent(callbackPath)}`);
-  await page.getByLabel('이메일').fill(email);
-  await page.getByLabel('비밀번호').fill(PASSWORD);
-
   const loginButton = page
     .getByRole('main')
     .getByRole('button', { name: '로그인', exact: true });
   await expect(loginButton).toBeEnabled();
+
+  const emailInput = page.getByLabel('이메일');
+  const passwordInput = page.getByLabel('비밀번호');
+  await emailInput.fill(email);
+  await passwordInput.fill(PASSWORD);
+  await expect(emailInput).toHaveValue(email);
+  await expect(passwordInput).toHaveValue(PASSWORD);
+
   await loginButton.click();
   await page.waitForURL((url) => url.origin === origin && url.pathname === callbackPath);
 }

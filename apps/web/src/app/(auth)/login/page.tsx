@@ -138,6 +138,7 @@ function LoginForm() {
           value={formData.email}
           onChange={(event) => setFormData({ ...formData, email: event.target.value })}
           placeholder="이메일 주소를 입력하세요"
+          disabled={!isHydrated || isLoading}
           required
         />
 
@@ -147,6 +148,7 @@ function LoginForm() {
           value={formData.password}
           onChange={(event) => setFormData({ ...formData, password: event.target.value })}
           placeholder="********"
+          disabled={!isHydrated || isLoading}
           required
         />
 
