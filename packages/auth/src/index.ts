@@ -28,7 +28,7 @@ import {
   isOpsPasswordLoginEnabled,
 } from './provider-policy';
 
-export { authConfig };
+export { authConfig, consumeAuthRateLimit as consumeSecurityRateLimit };
 
 const INVALID_PASSWORD_HASH = '$2b$12$L9ZCEutoKtpWCZEqZlh4yO4QQdzVoEq9YE8QSYHgvpygz0PwEa0ea';
 

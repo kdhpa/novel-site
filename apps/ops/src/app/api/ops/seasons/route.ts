@@ -33,6 +33,7 @@ export async function POST(request: Request) {
           message: `'${created.title}' 시즌을 만들었습니다.`,
           metadata: {
             slug: created.slug,
+            coverImage: created.coverImage,
             startsAt: created.startsAt.toISOString(),
             endsAt: created.endsAt.toISOString(),
             isActive: created.isActive,

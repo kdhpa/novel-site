@@ -43,6 +43,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
             previous: {
               title: current.title,
               slug: current.slug,
+              coverImage: current.coverImage,
               startsAt: current.startsAt.toISOString(),
               endsAt: current.endsAt.toISOString(),
               isActive: current.isActive,
@@ -50,6 +51,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
             next: {
               title: updated.title,
               slug: updated.slug,
+              coverImage: updated.coverImage,
               startsAt: updated.startsAt.toISOString(),
               endsAt: updated.endsAt.toISOString(),
               isActive: updated.isActive,

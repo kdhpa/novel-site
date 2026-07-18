@@ -3,16 +3,9 @@ import { auth } from '@novelverse/auth';
 import { prisma } from '@novelverse/db';
 import type { Session } from 'next-auth';
 import { logServerError } from '@novelverse/shared';
+import { OpsApiError } from './api-error';
 
-export class OpsApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'OpsApiError';
-    this.status = status;
-  }
-}
+export { OpsApiError } from './api-error';
 
 export async function requireOpsAdmin(): Promise<NonNullable<Session['user']>> {
   const session = await auth();
