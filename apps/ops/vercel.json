@@ -1,5 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "regions": ["hnd1"]
+  "buildCommand": "node -e \"console.error('NovelVerse Ops is local-only and must not be deployed to Vercel.'); process.exit(1)\""
 }
