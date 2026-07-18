@@ -129,6 +129,8 @@ Gemini 호출과 `/api/health`가 fail-closed 됩니다. 개발 환경에는 이
 ## 배포
 
 `web`과 `ops`는 독립 배포 단위입니다.
+Cloudflare Workers/OpenNext 운영 절차와 GitHub `production` 설정은
+[Cloudflare Workers 배포 가이드](./docs/cloudflare-deployment.md)를 따릅니다.
 
 - Web root: `apps/web`, 명령은 루트 workspace의 `npm run build:web`
 - Ops root: `apps/ops`, 명령은 루트 workspace의 `npm run build:ops`

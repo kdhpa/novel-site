@@ -18,6 +18,9 @@ node_modules/
 # next.js
 /.next/
 apps/*/.next/
+apps/*/.open-next/
+apps/*/.wrangler/
+apps/*/cloudflare-env.d.ts
 /out/
 
 # production
@@ -38,6 +41,8 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+**/.dev.vars*
+!**/.dev.vars.example
 
 # local agent and development process artifacts
 /.claude/settings.local.json
@@ -54,3 +59,4 @@ yarn-error.log*
 next-env.d.ts
 
 **/src/generated/prisma
+**/src/generated/prisma-cloudflare

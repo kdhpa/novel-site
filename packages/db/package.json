@@ -7,9 +7,12 @@
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
     "./client": "./src/client.ts",
-    "./prisma": "./src/prisma.ts"
+    "./prisma": "./src/prisma.ts",
+    "./runtime-client": "./src/runtime-client.ts",
+    "./runtime-client-cloudflare": "./src/runtime-client-cloudflare.ts"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "1.19.11",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "pg": "^8.17.2"

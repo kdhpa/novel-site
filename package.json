@@ -22,10 +22,20 @@
     "build": "npm run build:web && npm run build:ops",
     "build:web": "npm run build -w @novelverse/web",
     "build:ops": "npm run build -w @novelverse/ops",
+    "cf:build": "npm run cf:build:web && npm run cf:build:ops",
+    "cf:build:web": "npm run cf:build -w @novelverse/web",
+    "cf:build:ops": "npm run cf:build -w @novelverse/ops",
+    "cf:preview:web": "npm run cf:preview -w @novelverse/web",
+    "cf:preview:ops": "npm run cf:preview -w @novelverse/ops",
+    "cf:deploy:web": "npm run cf:deploy -w @novelverse/web",
+    "cf:deploy:ops": "npm run cf:deploy -w @novelverse/ops",
+    "cf:typegen": "npm run cf:typegen:web && npm run cf:typegen:ops",
+    "cf:typegen:web": "npm run cf:typegen -w @novelverse/web",
+    "cf:typegen:ops": "npm run cf:typegen -w @novelverse/ops",
     "start": "npm run start -w @novelverse/web",
     "start:web": "npm run start -w @novelverse/web",
     "start:ops": "npm run start -w @novelverse/ops",
-    "lint": "eslint apps packages e2e playwright.config.ts vitest.config.ts",
+    "lint": "eslint apps packages e2e scripts playwright.config.ts vitest.config.ts",
     "typecheck": "npm run typecheck:packages && npm run typecheck:web && npm run typecheck:ops && npm run typecheck:e2e",
     "typecheck:packages": "tsc -p tsconfig.json --noEmit",
     "typecheck:web": "tsc -p apps/web/tsconfig.json --noEmit",
@@ -42,15 +52,18 @@
     "bootstrap:admin": "node --env-file-if-exists=.env.local --env-file-if-exists=.env packages/db/scripts/bootstrap-admin.mjs"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "1.19.11",
     "@playwright/test": "^1.61.1",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
+    "cross-env": "10.1.0",
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "^16.2.10",
     "pg": "^8.17.2",
     "prisma": "^7.8.0",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "4.112.0"
   }
 }

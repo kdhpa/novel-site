@@ -17,10 +17,14 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     "apps/**/.next/**",
+    "apps/**/.open-next/**",
+    "apps/**/.wrangler/**",
+    "apps/**/cloudflare-env.d.ts",
     "out/**",
     "build/**",
     "next-env.d.ts",
     "packages/**/src/generated/prisma/**",
+    "packages/**/src/generated/prisma-cloudflare/**",
   ]),
 ]);
 

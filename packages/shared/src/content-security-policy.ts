@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 type CspEnvironment = {
   readonly [name: string]: string | undefined;
   NODE_ENV?: string;
@@ -49,7 +47,10 @@ export function getContentSecurityPolicyImageSources(
 }
 
 export function createContentSecurityPolicyNonce() {
-  return randomBytes(18).toString('base64');
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 export function buildNonceContentSecurityPolicy(
