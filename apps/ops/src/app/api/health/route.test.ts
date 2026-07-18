@@ -41,6 +41,20 @@ describe('ops health route', () => {
     expect(mocks.logServerError).not.toHaveBeenCalled();
   });
 
+  it('uses the Vercel commit SHA when RELEASE_SHA is not configured', async () => {
+    const vercelCommitSha = 'abcdef1234567890abcdef1234567890abcdef12';
+    vi.stubEnv('RELEASE_SHA', '');
+    vi.stubEnv('VERCEL_GIT_COMMIT_SHA', vercelCommitSha);
+    mocks.queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+
+    const response = await GET();
+
+    await expect(response.json()).resolves.toEqual({
+      status: 'ok',
+      release: vercelCommitSha,
+    });
+  });
+
   it('returns an opaque unhealthy response and logs database failures', async () => {
     const databaseError = new Error('secret database connection detail');
     mocks.queryRaw.mockRejectedValue(databaseError);

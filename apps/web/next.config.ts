@@ -1,9 +1,4 @@
 import type { NextConfig } from "next";
-import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
-
-initOpenNextCloudflareForDev();
-
-const isCloudflareBuild = process.env.CLOUDFLARE_WORKERS_BUILD === 'true';
 
 const storageImageHosts = new Set<string>();
 if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -30,16 +25,6 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  ...(isCloudflareBuild
-    ? {
-        turbopack: {
-          resolveAlias: {
-            '@novelverse/db/runtime-client': '@novelverse/db/runtime-client-cloudflare',
-            sharp: './src/lib/server/sharp-cloudflare-stub.ts',
-          },
-        },
-      }
-    : {}),
   ...(process.env.NODE_ENV !== 'production'
     ? { allowedDevOrigins: ['127.0.0.1'] }
     : {}),
@@ -48,7 +33,6 @@ const nextConfig: NextConfig = {
     '@prisma/client',
     '@prisma/adapter-pg',
     'pg',
-    'pg-cloudflare',
   ],
   images: {
     formats: ['image/webp'],

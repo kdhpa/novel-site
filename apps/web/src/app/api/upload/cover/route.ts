@@ -6,13 +6,13 @@ import { handleApiError } from '@/lib/server/api';
 import { assertRateLimit, getClientIp } from '@/lib/server/rate-limit';
 import { normalizeUploadedImage, RemoteImageError } from '@/lib/server/remote-image';
 import { readFormDataBodyWithLimit } from '@/lib/server/request-body';
+import {
+  COVER_FILE_SIZE_LABEL,
+  MAX_COVER_FILE_BYTES,
+  MAX_COVER_REQUEST_BYTES,
+} from '@/lib/cover-upload-limits';
 import type { ApiResponse } from '@/types';
 import { logServerError } from '@novelverse/shared';
-
-const MAX_COVER_FILE_BYTES = 5 * 1024 * 1024;
-// 파일 필드 헤더와 boundary 등 multipart 인코딩에 최대 1MiB를 별도로 허용한다.
-const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
-const MAX_COVER_REQUEST_BYTES = MAX_COVER_FILE_BYTES + MAX_MULTIPART_OVERHEAD_BYTES;
 
 // POST /api/upload/cover
 export async function POST(request: NextRequest) {
@@ -51,10 +51,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (max 5MB)
+    // Validate the decoded file size independently from the request body limit.
     if (file.size > MAX_COVER_FILE_BYTES) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: '파일 크기는 5MB 이하여야 합니다.' },
+        { success: false, error: `파일 크기는 ${COVER_FILE_SIZE_LABEL} 이하여야 합니다.` },
         { status: 400 }
       );
     }

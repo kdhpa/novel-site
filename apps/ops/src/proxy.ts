@@ -5,7 +5,7 @@ import {
   createContentSecurityPolicyNonce,
 } from '@novelverse/shared/content-security-policy';
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const nonce = createContentSecurityPolicyNonce();
   const contentSecurityPolicy = buildNonceContentSecurityPolicy(nonce);
   const requestHeaders = new Headers(request.headers);

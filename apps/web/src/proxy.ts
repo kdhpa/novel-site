@@ -1,4 +1,4 @@
-﻿// Authentication proxy for NovelVerse.
+// Authentication proxy for NovelVerse.
 import NextAuth from 'next-auth';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -40,7 +40,7 @@ function createNonceResponse(request: NextRequest) {
   return response;
 }
 
-export const middleware = auth((request) => createNonceResponse(request));
+export const proxy = auth((request) => createNonceResponse(request));
 
 export const config = {
   matcher: [

@@ -103,16 +103,15 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  deploy-production:
+  migrate-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [verify, e2e]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     environment:
       name: production
-      url: ${{ vars.WEB_PRODUCTION_URL }}
     concurrency:
-      group: novelverse-cloudflare-production
+      group: novelverse-production-migrations
       cancel-in-progress: false
 
     steps:
@@ -122,236 +121,23 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run prisma:generate
 
-      - name: Validate production configuration
+      - name: Validate production database configuration
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
-          RELEASE_SHA: ${{ github.sha }}
-          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-          NEXTAUTH_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          AUTH_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_WEB_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_OPS_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          OPS_GOOGLE_HOSTED_DOMAIN: ${{ vars.OPS_GOOGLE_HOSTED_DOMAIN }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEXT_PUBLIC_IMAGE_HOSTS: ${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
-          REMOTE_IMAGE_ALLOWED_HOSTS: ${{ vars.REMOTE_IMAGE_ALLOWED_HOSTS }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          AUTH_EMAIL_TIMEOUT_MS: ${{ vars.AUTH_EMAIL_TIMEOUT_MS }}
-          BACKUP_RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS }}
-          NEXT_PUBLIC_PRIVACY_CONTACT: ${{ vars.NEXT_PUBLIC_PRIVACY_CONTACT }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          CONTENT_VIEW_RETENTION_DAYS: ${{ vars.CONTENT_VIEW_RETENTION_DAYS }}
-          IMAGE_JOB_RETENTION_DAYS: ${{ vars.IMAGE_JOB_RETENTION_DAYS }}
-          MODERATION_RECORD_RETENTION_DAYS: ${{ vars.MODERATION_RECORD_RETENTION_DAYS }}
-          MAX_NOVELS_PER_USER: ${{ vars.MAX_NOVELS_PER_USER }}
-          MAX_CHAPTERS_PER_NOVEL: ${{ vars.MAX_CHAPTERS_PER_NOVEL }}
-          MAX_CHARACTERS_PER_NOVEL: ${{ vars.MAX_CHARACTERS_PER_NOVEL }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          REPLICATE_ANIME_MODEL_VERSION: ${{ vars.REPLICATE_ANIME_MODEL_VERSION }}
-          REPLICATE_ANIME_MODEL: ${{ vars.REPLICATE_ANIME_MODEL }}
-          REPLICATE_IMAGE_TIMEOUT_SECONDS: ${{ vars.REPLICATE_IMAGE_TIMEOUT_SECONDS }}
-          REPLICATE_HTTP_TIMEOUT_MS: ${{ vars.REPLICATE_HTTP_TIMEOUT_MS }}
-          REPLICATE_IMAGE_POLL_INTERVAL_MS: ${{ vars.REPLICATE_IMAGE_POLL_INTERVAL_MS }}
-          REPLICATE_IMAGE_STEPS: ${{ vars.REPLICATE_IMAGE_STEPS }}
-          REPLICATE_IMAGE_GUIDANCE_SCALE: ${{ vars.REPLICATE_IMAGE_GUIDANCE_SCALE }}
-          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
-          GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED: ${{ vars.GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED }}
-          AI_GLOBAL_DAILY_LIMIT: ${{ vars.AI_GLOBAL_DAILY_LIMIT }}
         run: |
-          node scripts/write-cloudflare-secrets.mjs web --validate-only
-          node scripts/write-cloudflare-secrets.mjs ops --validate-only
-          node scripts/write-cloudflare-secrets.mjs migration --validate-only
-
-      - name: Build web Worker
-        env:
-          DATABASE_URL: postgresql://build-only:build-only@127.0.0.1:5432/novelverse_build?schema=public
-          NEXTAUTH_SECRET: build-only-nextauth-secret-with-at-least-32-characters
-          NEXTAUTH_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_WEB_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_OPS_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: build-only-google-client-secret
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: build-only-supabase-service-role-key
-          NEXT_PUBLIC_IMAGE_HOSTS: ${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          BACKUP_RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS }}
-          NEXT_PUBLIC_PRIVACY_CONTACT: ${{ vars.NEXT_PUBLIC_PRIVACY_CONTACT }}
-          TRUSTED_PROXY_PROVIDER: cloudflare
-          REQUIRE_PERSISTENT_STORAGE: 'true'
-          ALLOW_EPHEMERAL_STORAGE: 'false'
-        run: npm run cf:build:web
-
-      - name: Build ops Worker
-        env:
-          DATABASE_URL: postgresql://build-only:build-only@127.0.0.1:5432/novelverse_build?schema=public
-          AUTH_SECRET: build-only-ops-auth-secret-with-at-least-32-characters
-          AUTH_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          NEXT_PUBLIC_WEB_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: build-only-google-client-secret
-          OPS_GOOGLE_HOSTED_DOMAIN: ${{ vars.OPS_GOOGLE_HOSTED_DOMAIN }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_IMAGE_HOSTS: ${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
-          TRUSTED_PROXY_PROVIDER: cloudflare
-        run: npm run cf:build:ops
-
-      - name: Ensure build-only server values were not bundled
-        run: |
-          test -f apps/web/.open-next/worker.js
-          test -f apps/ops/.open-next/worker.js
-          if grep --recursive --quiet --binary-files=text 'build-only-' \
-            apps/web/.open-next apps/ops/.open-next; then
-            echo 'A build-only server value was bundled into a Worker.' >&2
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::GitHub production secret PRODUCTION_DATABASE_URL is required."
             exit 1
           fi
-
-      - name: Verify Cloudflare credentials and account access
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npx wrangler whoami --json |
-            jq --exit-status --arg id "$CLOUDFLARE_ACCOUNT_ID" \
-              '.loggedIn == true and any(.accounts[]?; .id == $id)' \
-              > /dev/null
+          if [ -z "$DIRECT_URL" ]; then
+            echo "::error::GitHub production secret PRODUCTION_DIRECT_URL is required."
+            exit 1
+          fi
 
       - name: Apply production database migrations
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
         run: npm run prisma:deploy
-
-      - name: Prepare ops Worker secrets
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-          RELEASE_SHA: ${{ github.sha }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          AUTH_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          NEXT_PUBLIC_WEB_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          OPS_GOOGLE_HOSTED_DOMAIN: ${{ vars.OPS_GOOGLE_HOSTED_DOMAIN }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_IMAGE_HOSTS: ${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
-        run: >-
-          node scripts/write-cloudflare-secrets.mjs ops
-          "$RUNNER_TEMP/novelverse-ops-secrets.json"
-
-      - name: Deploy ops Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: >-
-          npm run cf:deploy -w @novelverse/ops --
-          --secrets-file "$RUNNER_TEMP/novelverse-ops-secrets.json"
-          --message "$GITHUB_SHA"
-
-      - name: Remove ops Worker secret file
-        if: always()
-        run: rm -f "$RUNNER_TEMP/novelverse-ops-secrets.json"
-
-      - name: Smoke test ops
-        env:
-          OPS_PRODUCTION_URL: ${{ vars.OPS_PRODUCTION_URL }}
-        run: |
-          curl --fail --silent --show-error --retry 12 --retry-all-errors \
-            --retry-delay 5 --max-time 20 \
-            --output "$RUNNER_TEMP/novelverse-ops-providers.json" \
-            "${OPS_PRODUCTION_URL%/}/api/auth/providers"
-          node scripts/validate-cloudflare-smoke.mjs ops-providers \
-            "$RUNNER_TEMP/novelverse-ops-providers.json"
-          curl --fail --silent --show-error --retry 12 --retry-all-errors \
-            --retry-delay 5 --max-time 20 \
-            --output "$RUNNER_TEMP/novelverse-ops-health.json" \
-            "${OPS_PRODUCTION_URL%/}/api/health"
-          node scripts/validate-cloudflare-smoke.mjs ops-health \
-            "$RUNNER_TEMP/novelverse-ops-health.json" "$GITHUB_SHA"
-
-      - name: Prepare web Worker secrets
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-          RELEASE_SHA: ${{ github.sha }}
-          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-          NEXTAUTH_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_WEB_URL: ${{ vars.WEB_PRODUCTION_URL }}
-          NEXT_PUBLIC_OPS_URL: ${{ vars.OPS_PRODUCTION_URL }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEXT_PUBLIC_IMAGE_HOSTS: ${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
-          REMOTE_IMAGE_ALLOWED_HOSTS: ${{ vars.REMOTE_IMAGE_ALLOWED_HOSTS }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          AUTH_EMAIL_TIMEOUT_MS: ${{ vars.AUTH_EMAIL_TIMEOUT_MS }}
-          BACKUP_RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS }}
-          NEXT_PUBLIC_PRIVACY_CONTACT: ${{ vars.NEXT_PUBLIC_PRIVACY_CONTACT }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          CONTENT_VIEW_RETENTION_DAYS: ${{ vars.CONTENT_VIEW_RETENTION_DAYS }}
-          IMAGE_JOB_RETENTION_DAYS: ${{ vars.IMAGE_JOB_RETENTION_DAYS }}
-          MODERATION_RECORD_RETENTION_DAYS: ${{ vars.MODERATION_RECORD_RETENTION_DAYS }}
-          MAX_NOVELS_PER_USER: ${{ vars.MAX_NOVELS_PER_USER }}
-          MAX_CHAPTERS_PER_NOVEL: ${{ vars.MAX_CHAPTERS_PER_NOVEL }}
-          MAX_CHARACTERS_PER_NOVEL: ${{ vars.MAX_CHARACTERS_PER_NOVEL }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          REPLICATE_ANIME_MODEL_VERSION: ${{ vars.REPLICATE_ANIME_MODEL_VERSION }}
-          REPLICATE_ANIME_MODEL: ${{ vars.REPLICATE_ANIME_MODEL }}
-          REPLICATE_IMAGE_TIMEOUT_SECONDS: ${{ vars.REPLICATE_IMAGE_TIMEOUT_SECONDS }}
-          REPLICATE_HTTP_TIMEOUT_MS: ${{ vars.REPLICATE_HTTP_TIMEOUT_MS }}
-          REPLICATE_IMAGE_POLL_INTERVAL_MS: ${{ vars.REPLICATE_IMAGE_POLL_INTERVAL_MS }}
-          REPLICATE_IMAGE_STEPS: ${{ vars.REPLICATE_IMAGE_STEPS }}
-          REPLICATE_IMAGE_GUIDANCE_SCALE: ${{ vars.REPLICATE_IMAGE_GUIDANCE_SCALE }}
-          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
-          GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED: ${{ vars.GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED }}
-          AI_GLOBAL_DAILY_LIMIT: ${{ vars.AI_GLOBAL_DAILY_LIMIT }}
-        run: >-
-          node scripts/write-cloudflare-secrets.mjs web
-          "$RUNNER_TEMP/novelverse-web-secrets.json"
-
-      - name: Deploy web Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: >-
-          npm run cf:deploy -w @novelverse/web --
-          --secrets-file "$RUNNER_TEMP/novelverse-web-secrets.json"
-          --message "$GITHUB_SHA"
-
-      - name: Remove web Worker secret file
-        if: always()
-        run: rm -f "$RUNNER_TEMP/novelverse-web-secrets.json"
-
-      - name: Smoke test web health
-        env:
-          WEB_PRODUCTION_URL: ${{ vars.WEB_PRODUCTION_URL }}
-        run: |
-          curl --fail --silent --show-error --retry 12 --retry-all-errors \
-            --retry-delay 5 --max-time 20 \
-            --output "$RUNNER_TEMP/novelverse-web-health.json" \
-            "${WEB_PRODUCTION_URL%/}/api/health"
-          node scripts/validate-cloudflare-smoke.mjs web-health \
-            "$RUNNER_TEMP/novelverse-web-health.json" "$GITHUB_SHA"
-
-      - name: Remove temporary smoke responses
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/novelverse-ops-providers.json"
-          rm -f "$RUNNER_TEMP/novelverse-ops-health.json"
-          rm -f "$RUNNER_TEMP/novelverse-web-health.json"
