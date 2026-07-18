@@ -17,7 +17,7 @@ function getActionError(error: unknown, fallback: string) {
 }
 
 export default function NovelActions({ novelId, initialLiked, initialBookmarked, initialLikeCount }: NovelActionsProps) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [liked, setLiked] = useState(initialLiked);
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
@@ -25,8 +25,10 @@ export default function NovelActions({ novelId, initialLiked, initialBookmarked,
   const [isPending, setIsPending] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
   const [actionError, setActionError] = useState('');
+  const isSessionLoading = status === 'loading';
 
   const requireLogin = () => {
+    if (isSessionLoading) return false;
     if (!session?.user) {
       router.push(`/login?callbackUrl=${encodeURIComponent(`/novels/${novelId}`)}`);
       return false;
@@ -94,11 +96,11 @@ export default function NovelActions({ novelId, initialLiked, initialBookmarked,
 
   return (
     <div className="flex flex-col items-center gap-2 md:items-start">
-      <div className="flex items-center justify-center gap-2 md:justify-start" aria-busy={isPending}>
+      <div className="flex items-center justify-center gap-2 md:justify-start" aria-busy={isPending || isSessionLoading}>
         <button
           type="button"
           onClick={toggleBookmark}
-          disabled={isPending}
+          disabled={isPending || isSessionLoading}
           className={`rounded-md border border-border p-3 transition-colors ${bookmarked ? 'bg-primary text-white' : 'bg-background-tertiary text-zinc-400 hover:border-accent-muted hover:text-white'}`}
           aria-label={bookmarked ? '북마크 해제' : '북마크 추가'}
           aria-pressed={bookmarked}
@@ -108,7 +110,7 @@ export default function NovelActions({ novelId, initialLiked, initialBookmarked,
         <button
           type="button"
           onClick={toggleLike}
-          disabled={isPending}
+          disabled={isPending || isSessionLoading}
           className={`flex items-center gap-2 rounded-md border border-border px-4 py-3 transition-colors ${liked ? 'bg-rose-600 text-white' : 'bg-background-tertiary text-zinc-400 hover:border-accent-muted hover:text-white'}`}
           aria-label={liked ? '좋아요 취소' : '좋아요'}
           aria-pressed={liked}
