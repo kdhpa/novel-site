@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: ['master', 'main']
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/novelverse_ci?schema=public
+  DIRECT_URL: postgresql://postgres:postgres@localhost:5432/novelverse_ci?schema=public
+  E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/novelverse_ci?schema=public
+  NEXTAUTH_SECRET: ci-only-secret-with-at-least-32-characters
+  NEXTAUTH_URL: http://127.0.0.1:3000
+  AUTH_SECRET: ci-only-secret-with-at-least-32-characters
+  AUTH_URL: http://127.0.0.1:3002
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+  REQUIRE_PERSISTENT_STORAGE: 'false'
+  # CI has no durable image backend. Production must leave this disabled.
+  ALLOW_EPHEMERAL_STORAGE: 'true'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: novelverse_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d novelverse_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - name: Verify migrations on an empty PostgreSQL database
+        run: npm run prisma:deploy
+      - run: npm run prisma:validate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: novelverse_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d novelverse_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run prisma:deploy
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
