@@ -35,7 +35,9 @@ async function logIn(page: Page, origin: string, email: string, callbackPath: st
   await page.getByLabel('이메일').fill(email);
   await page.getByLabel('비밀번호').fill(PASSWORD);
 
-  const loginButton = page.getByRole('button', { name: '로그인', exact: true });
+  const loginButton = page
+    .getByRole('main')
+    .getByRole('button', { name: '로그인', exact: true });
   await expect(loginButton).toBeEnabled();
   await loginButton.click();
   await page.waitForURL((url) => url.origin === origin && url.pathname === callbackPath);
@@ -202,8 +204,11 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
       await readerPage.goto(`${WEB_URL}/novels/${novelId}`);
       await expect(readerPage.getByRole('heading', { name: novelTitle })).toBeVisible();
       await readerPage.getByRole('link', { name: '첫 화 보기', exact: true }).click();
-      await expect(readerPage.getByRole('heading', { name: chapterTitle })).toBeVisible();
-      await expect(readerPage.getByText(chapterText, { exact: true })).toBeVisible();
+      await readerPage.waitForURL(`${WEB_URL}/novels/${novelId}/${chapterId}`);
+      await expect(readerPage.getByRole('heading', { level: 1, name: chapterTitle })).toBeVisible();
+      await expect(
+        readerPage.locator('article.reader-content').getByText(chapterText, { exact: true }),
+      ).toBeVisible();
 
       await authorPage.goto(`${WEB_URL}/novels/${novelId}`);
       await authorPage.getByRole('button', { name: '북마크 추가' }).click();
