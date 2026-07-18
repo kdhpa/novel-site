@@ -1,6 +1,7 @@
 import { OpsApiError } from './api-error';
 
 const MULTIPART_FORM_DATA = 'multipart/form-data';
+const APPLICATION_JSON = 'application/json';
 
 async function readBodyBytesWithLimit(request: Request, maxBytes: number) {
   const declaredLength = request.headers.get('content-length');
@@ -59,5 +60,22 @@ export async function readFormDataBodyWithLimit(request: Request, maxBytes: numb
     }).formData();
   } catch {
     throw new OpsApiError(400, '올바른 multipart/form-data 요청을 입력해 주세요.');
+  }
+}
+
+export async function readJsonBodyWithLimit<T>(request: Request, maxBytes: number): Promise<T> {
+  const mediaType = request.headers.get('content-type')
+    ?.split(';', 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (mediaType !== APPLICATION_JSON) {
+    throw new OpsApiError(415, 'application/json 형식의 요청만 처리할 수 있습니다.');
+  }
+
+  const bytes = await readBodyBytesWithLimit(request, maxBytes);
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as T;
+  } catch {
+    throw new OpsApiError(400, '올바른 JSON 요청을 입력해 주세요.');
   }
 }

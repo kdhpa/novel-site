@@ -4,6 +4,7 @@ import {
   getImageJobStorageTarget,
   imageFinalizationRetryPolicy,
   imageJobTokenMatchesRecord,
+  isSupportedImageJobType,
   normalizeImageJobStatus,
   parsePortraitJobMetadata,
 } from './image-job-state';
@@ -13,6 +14,12 @@ describe('image job state', () => {
     expect(normalizeImageJobStatus('successful')).toBe('succeeded');
     expect(normalizeImageJobStatus('cancelled')).toBe('canceled');
     expect(normalizeImageJobStatus('unknown')).toBe('processing');
+  });
+
+  it('Web 전용 이미지 작업 타입만 허용한다', () => {
+    expect(isSupportedImageJobType('cover')).toBe(true);
+    expect(isSupportedImageJobType('custom')).toBe(true);
+    expect(isSupportedImageJobType('contest-banner')).toBe(false);
   });
 
   it('DB 레코드와 모든 권한 필드가 같은 토큰만 허용한다', () => {

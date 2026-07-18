@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFormDataBodyWithLimit } from './request-body';
+import { readFormDataBodyWithLimit, readJsonBodyWithLimit } from './request-body';
 
 function multipartBody(boundary: string, content: string) {
   return new TextEncoder().encode([
@@ -63,5 +63,33 @@ describe('ops readFormDataBodyWithLimit', () => {
 
     await expect(readFormDataBodyWithLimit(request, 1024))
       .rejects.toMatchObject({ status: 415 });
+  });
+});
+
+describe('ops readJsonBodyWithLimit', () => {
+  it('크기 제한 안의 JSON 본문을 읽는다', async () => {
+    const request = new Request('https://ops.novelverse.test/api/ops/seasons/banner-ai-jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ prompt: 'banner' }),
+    });
+    await expect(readJsonBodyWithLimit(request, 1024))
+      .resolves.toEqual({ prompt: 'banner' });
+  });
+
+  it('잘못된 JSON과 크기 초과 요청을 거부한다', async () => {
+    const malformed = new Request('https://ops.novelverse.test/api/ops/seasons/banner-ai-jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    });
+    await expect(readJsonBodyWithLimit(malformed, 1024)).rejects.toMatchObject({ status: 400 });
+
+    const oversized = new Request('https://ops.novelverse.test/api/ops/seasons/banner-ai-jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'too long' }),
+    });
+    await expect(readJsonBodyWithLimit(oversized, 4)).rejects.toMatchObject({ status: 413 });
   });
 });

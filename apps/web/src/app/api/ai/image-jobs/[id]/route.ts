@@ -20,6 +20,7 @@ import {
   getImageJobStorageTarget,
   imageFinalizationRetryPolicy,
   imageJobTokenMatchesRecord,
+  isSupportedImageJobType,
   MAX_IMAGE_FINALIZATION_ATTEMPTS,
   normalizeImageJobStatus,
   parsePortraitJobMetadata,
@@ -339,7 +340,13 @@ export async function GET(
 
     const { id } = await params;
     let job = await getJob(id);
-    if (!job || job.userId !== session.user.id) return notFoundResponse();
+    if (
+      !job ||
+      job.userId !== session.user.id ||
+      !isSupportedImageJobType(job.type)
+    ) {
+      return notFoundResponse();
+    }
 
     const requestedNovelId = request.nextUrl.searchParams.get('novelId') || undefined;
     if (requestedNovelId && !job.novelId) {
