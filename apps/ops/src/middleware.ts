@@ -1,35 +1,13 @@
-﻿// Authentication proxy for NovelVerse.
-import NextAuth from 'next-auth';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import {
   buildNonceContentSecurityPolicy,
   createContentSecurityPolicyNonce,
 } from '@novelverse/shared/content-security-policy';
-import { authConfig } from '@/lib/auth.config';
-import { getProxyAuthRedirectTarget } from '@/lib/server/proxy-auth';
 
-const { auth } = NextAuth(authConfig);
-
-function createNonceResponse(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const nonce = createContentSecurityPolicyNonce();
   const contentSecurityPolicy = buildNonceContentSecurityPolicy(nonce);
-  const requestWithAuth = request as NextRequest & {
-    auth?: { user?: { role?: string } } | null;
-  };
-  const redirectTarget = getProxyAuthRedirectTarget({
-    pathname: request.nextUrl.pathname,
-    search: request.nextUrl.search,
-    isLoggedIn: Boolean(requestWithAuth.auth?.user),
-    role: requestWithAuth.auth?.user?.role,
-  });
-
-  if (redirectTarget) {
-    const redirectResponse = NextResponse.redirect(new URL(redirectTarget, request.url));
-    redirectResponse.headers.set('Content-Security-Policy', contentSecurityPolicy);
-    return redirectResponse;
-  }
-
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.set('x-nonce', nonce);
@@ -39,8 +17,6 @@ function createNonceResponse(request: NextRequest) {
   response.headers.set('Content-Security-Policy', contentSecurityPolicy);
   return response;
 }
-
-export const proxy = auth((request) => createNonceResponse(request));
 
 export const config = {
   matcher: [

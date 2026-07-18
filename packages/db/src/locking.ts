@@ -1,4 +1,4 @@
-import type { Prisma } from './generated/prisma/client';
+import type { Prisma } from '@novelverse/db/runtime-client';
 
 /** 관리자 권한 변경과 관리자 권한을 사용하는 쓰기 작업의 경합을 막는다. */
 export async function acquireAdminRoleReadLock(

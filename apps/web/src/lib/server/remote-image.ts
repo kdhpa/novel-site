@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import https from 'node:https';
 import net from 'node:net';
+import { getCloudflareContext } from '@opennextjs/cloudflare/cloudflare-context';
 import sharp from 'sharp';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -8,6 +9,8 @@ const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_REDIRECTS = 3;
 const MAX_INPUT_PIXELS = 40_000_000;
 const MAX_DIMENSION = 8192;
+const MAX_CLOUDFLARE_IMAGE_CONCURRENCY = 2;
+const MAX_CLOUDFLARE_IMAGE_QUEUE = 8;
 
 const DEFAULT_ALLOWED_HOST_RULES = [
   'replicate.delivery',
@@ -32,6 +35,30 @@ type RemoteResponse = {
   redirectUrl?: URL;
 };
 
+type CloudflareImageInfo =
+  | { format: 'image/svg+xml' }
+  | { format: string; fileSize: number; width: number; height: number };
+
+type CloudflareImageTransformationResult = {
+  response(): Response;
+};
+
+type CloudflareImageTransformer = {
+  output(options: {
+    format: 'image/webp';
+    quality?: number;
+    anim?: boolean;
+  }): Promise<CloudflareImageTransformationResult>;
+};
+
+type CloudflareImagesBinding = {
+  info(stream: ReadableStream<Uint8Array>): Promise<CloudflareImageInfo>;
+  input(stream: ReadableStream<Uint8Array>): CloudflareImageTransformer;
+};
+
+let activeCloudflareImageTasks = 0;
+const cloudflareImageWaiters: Array<() => void> = [];
+
 export type VerifiedRemoteImage = {
   bytes: Buffer;
   contentType: 'image/webp';
@@ -55,6 +82,70 @@ export class RemoteImageError extends Error {
     this.name = 'RemoteImageError';
     this.status = status;
   }
+}
+
+function isCloudflareWorkersRuntime() {
+  return process.env.CLOUDFLARE_WORKERS === 'true'
+    || (typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers');
+}
+
+async function getCloudflareImagesBinding() {
+  const { env } = await getCloudflareContext({ async: true });
+  const images = env.IMAGES as CloudflareImagesBinding | undefined;
+  if (!images) {
+    throw new RemoteImageError(503, 'Cloudflare Images 바인딩이 설정되지 않았습니다.');
+  }
+  return images;
+}
+
+function bufferStream(body: Buffer) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(body);
+      controller.close();
+    },
+  });
+}
+
+function createCloudflareImageSlotRelease() {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeCloudflareImageTasks -= 1;
+    cloudflareImageWaiters.shift()?.();
+  };
+}
+
+async function acquireCloudflareImageSlot(timeoutMs: number) {
+  if (activeCloudflareImageTasks < MAX_CLOUDFLARE_IMAGE_CONCURRENCY) {
+    activeCloudflareImageTasks += 1;
+    return createCloudflareImageSlotRelease();
+  }
+  if (cloudflareImageWaiters.length >= MAX_CLOUDFLARE_IMAGE_QUEUE) {
+    throw new RemoteImageError(503, '이미지 처리 요청이 많습니다. 잠시 후 다시 시도해 주세요.');
+  }
+
+  const boundedTimeoutMs = Math.min(Math.max(timeoutMs, 1), DEFAULT_TIMEOUT_MS);
+  return new Promise<() => void>((resolve, reject) => {
+    let settled = false;
+    const grant = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      activeCloudflareImageTasks += 1;
+      resolve(createCloudflareImageSlotRelease());
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const waiterIndex = cloudflareImageWaiters.indexOf(grant);
+      if (waiterIndex >= 0) cloudflareImageWaiters.splice(waiterIndex, 1);
+      reject(new RemoteImageError(503, '이미지 처리 대기 시간이 초과되었습니다.'));
+    }, boundedTimeoutMs);
+    cloudflareImageWaiters.push(grant);
+  });
 }
 
 function normalizeHostname(hostname: string) {
@@ -187,8 +278,12 @@ function validateUrl(url: URL, options: FetchRemoteImageOptions) {
   }
 
   const hostname = normalizeHostname(url.hostname);
-  const allowAnyPublicHost = options.allowAnyPublicHost
-    ?? process.env.REMOTE_IMAGE_ALLOW_ANY_PUBLIC_HOST === 'true';
+  // Workers cannot pin a resolved address and SNI the way the Node.js path
+  // below does, so its egress policy must always remain allowlist-only.
+  const allowAnyPublicHost = !isCloudflareWorkersRuntime() && (
+    options.allowAnyPublicHost
+      ?? process.env.REMOTE_IMAGE_ALLOW_ANY_PUBLIC_HOST === 'true'
+  );
   const rules = options.allowedHostRules || configuredHostRules();
   if (!allowAnyPublicHost && !isAllowedRemoteImageHostname(hostname, rules)) {
     throw new RemoteImageError(400, '허용된 이미지 호스트의 URL만 사용할 수 있습니다.');
@@ -201,6 +296,13 @@ function validateUrl(url: URL, options: FetchRemoteImageOptions) {
     hostname.endsWith('.internal')
   ) {
     throw new RemoteImageError(400, '내부 네트워크의 이미지 URL은 사용할 수 없습니다.');
+  }
+
+  if (
+    (isCloudflareWorkersRuntime() && net.isIP(hostname)) ||
+    (net.isIP(hostname) && !isPublicIpAddress(hostname))
+  ) {
+    throw new RemoteImageError(400, '공개 인터넷 이미지 주소만 사용할 수 있습니다.');
   }
 }
 
@@ -352,6 +454,114 @@ function requestOnce(
   });
 }
 
+async function readFetchBodyWithLimit(response: Response, maxBytes: number) {
+  const rawContentLength = response.headers.get('content-length');
+  const parsedContentLength = rawContentLength === null ? Number.NaN : Number(rawContentLength);
+  const contentLength = Number.isSafeInteger(parsedContentLength) && parsedContentLength >= 0
+    ? parsedContentLength
+    : undefined;
+  if (contentLength !== undefined && contentLength > maxBytes) {
+    await response.body?.cancel();
+    throw new RemoteImageError(413, '원격 이미지 파일이 너무 큽니다.');
+  }
+  if (!response.body) {
+    throw new RemoteImageError(502, '원격 이미지를 읽지 못했습니다.');
+  }
+
+  const reader = response.body.getReader();
+  const initialCapacity = Math.max(
+    1,
+    Math.min(contentLength && contentLength > 0 ? contentLength : 64 * 1024, maxBytes)
+  );
+  let buffer = Buffer.allocUnsafe(initialCapacity);
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const requiredBytes = totalBytes + value.byteLength;
+      if (requiredBytes > maxBytes) {
+        await reader.cancel();
+        throw new RemoteImageError(413, '원격 이미지 파일이 너무 큽니다.');
+      }
+      if (requiredBytes > buffer.byteLength) {
+        const nextCapacity = Math.min(
+          maxBytes,
+          Math.max(requiredBytes, buffer.byteLength * 2)
+        );
+        const grown = Buffer.allocUnsafe(nextCapacity);
+        buffer.copy(grown, 0, 0, totalBytes);
+        buffer = grown;
+      }
+      buffer.set(value, totalBytes);
+      totalBytes = requiredBytes;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return buffer.subarray(0, totalBytes);
+}
+
+async function requestOnceWithFetch(
+  url: URL,
+  deadline: number,
+  maxBytes: number
+): Promise<RemoteResponse> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) {
+    throw new RemoteImageError(504, '원격 이미지 요청 시간이 초과되었습니다.');
+  }
+
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), remainingMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'image/jpeg, image/png, image/gif, image/webp',
+        'Accept-Encoding': 'identity',
+        'User-Agent': 'NovelVerse-Image-Proxy/1.0',
+      },
+      redirect: 'manual',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location) {
+        throw new RemoteImageError(502, '이미지 리디렉션 주소가 올바르지 않습니다.');
+      }
+      try {
+        return { redirectUrl: new URL(location, url) };
+      } catch {
+        throw new RemoteImageError(502, '이미지 리디렉션 주소가 올바르지 않습니다.');
+      }
+    }
+
+    if (response.status !== 200) {
+      await response.body?.cancel();
+      throw new RemoteImageError(502, '원격 이미지 서버가 요청을 처리하지 못했습니다.');
+    }
+
+    return {
+      body: await readFetchBodyWithLimit(response, maxBytes),
+      contentType: normalizedContentType(response.headers.get('content-type') || undefined),
+    };
+  } catch (error) {
+    if (error instanceof RemoteImageError) throw error;
+    if (controller.signal.aborted) {
+      throw new RemoteImageError(504, '원격 이미지 요청 시간이 초과되었습니다.');
+    }
+    throw new RemoteImageError(502, '원격 이미지 서버에 연결하지 못했습니다.');
+  } finally {
+    clearTimeout(hardTimeout);
+  }
+}
+
 function detectImageFormat(bytes: Buffer): InputImageFormat | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return 'jpeg';
@@ -376,6 +586,78 @@ function detectImageFormat(bytes: Buffer): InputImageFormat | null {
   return null;
 }
 
+function normalizeBindingFormat(format: string): InputImageFormat | null {
+  switch (format.trim().toLowerCase()) {
+    case 'jpg':
+    case 'jpeg':
+    case 'image/jpeg':
+      return 'jpeg';
+    case 'png':
+    case 'image/png':
+      return 'png';
+    case 'gif':
+    case 'image/gif':
+      return 'gif';
+    case 'webp':
+    case 'image/webp':
+      return 'webp';
+    default:
+      return null;
+  }
+}
+
+async function verifyAndReencodeWithCloudflare(
+  body: Buffer,
+  detectedFormat: InputImageFormat,
+  maxBytes: number
+) {
+  const images = await getCloudflareImagesBinding();
+  let info: CloudflareImageInfo;
+  try {
+    info = await images.info(bufferStream(body));
+  } catch {
+    throw new RemoteImageError(415, '손상되었거나 지원하지 않는 이미지입니다.');
+  }
+
+  if (
+    !('width' in info) ||
+    normalizeBindingFormat(info.format) !== detectedFormat ||
+    !Number.isSafeInteger(info.width) ||
+    !Number.isSafeInteger(info.height) ||
+    !Number.isSafeInteger(info.fileSize) ||
+    info.width <= 0 ||
+    info.height <= 0 ||
+    info.fileSize <= 0 ||
+    info.fileSize > maxBytes ||
+    info.width > MAX_DIMENSION ||
+    info.height > MAX_DIMENSION ||
+    info.width * info.height > MAX_INPUT_PIXELS
+  ) {
+    throw new RemoteImageError(415, '지원하지 않는 이미지 크기 또는 형식입니다.');
+  }
+
+  try {
+    const result = await images
+      .input(bufferStream(body))
+      .output({ format: 'image/webp', quality: 88, anim: false });
+    const response = result.response();
+    if (!response.ok) {
+      throw new RemoteImageError(502, '이미지 변환 서비스가 요청을 처리하지 못했습니다.');
+    }
+    if (normalizedContentType(response.headers.get('content-type') || undefined) !== 'image/webp') {
+      throw new RemoteImageError(502, 'WebP 변환 결과가 올바르지 않습니다.');
+    }
+    const output = await readFetchBodyWithLimit(response, maxBytes);
+    if (detectImageFormat(output) !== 'webp') {
+      throw new RemoteImageError(502, 'WebP 변환 결과가 손상되었습니다.');
+    }
+    return output;
+  } catch (error) {
+    if (error instanceof RemoteImageError) throw error;
+    throw new RemoteImageError(502, '이미지 변환 서비스가 요청을 처리하지 못했습니다.');
+  }
+}
+
 async function verifyAndReencode(body: Buffer, contentType: string, maxBytes: number) {
   const expectedFormat = INPUT_MIME_TYPES.get(contentType);
   if (!expectedFormat) {
@@ -385,6 +667,10 @@ async function verifyAndReencode(body: Buffer, contentType: string, maxBytes: nu
   const detectedFormat = detectImageFormat(body);
   if (!detectedFormat || detectedFormat !== expectedFormat) {
     throw new RemoteImageError(415, '이미지 형식과 파일 내용이 일치하지 않습니다.');
+  }
+
+  if (isCloudflareWorkersRuntime()) {
+    return verifyAndReencodeWithCloudflare(body, detectedFormat, maxBytes);
   }
 
   try {
@@ -432,14 +718,21 @@ export async function normalizeUploadedImage(
     throw new RemoteImageError(413, '이미지 파일이 너무 큽니다.');
   }
 
-  const normalizedType = normalizedContentType(contentType);
-  const bytes = await verifyAndReencode(body, normalizedType, boundedMaxBytes);
-  return {
-    bytes,
-    contentType: 'image/webp',
-    extension: 'webp',
-    sourceContentType: normalizedType,
-  };
+  const releaseSlot = isCloudflareWorkersRuntime()
+    ? await acquireCloudflareImageSlot(DEFAULT_TIMEOUT_MS)
+    : undefined;
+  try {
+    const normalizedType = normalizedContentType(contentType);
+    const bytes = await verifyAndReencode(body, normalizedType, boundedMaxBytes);
+    return {
+      bytes,
+      contentType: 'image/webp',
+      extension: 'webp',
+      sourceContentType: normalizedType,
+    };
+  } finally {
+    releaseSlot?.();
+  }
 }
 
 export async function fetchVerifiedRemoteImage(
@@ -458,38 +751,54 @@ export async function fetchVerifiedRemoteImage(
     throw new RemoteImageError(400, '올바른 이미지 URL을 입력해 주세요.');
   }
 
-  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-    validateUrl(url, options);
+  const cloudflareRuntime = isCloudflareWorkersRuntime();
+  const releaseSlot = cloudflareRuntime
+    ? await acquireCloudflareImageSlot(deadline - Date.now())
+    : undefined;
+  try {
+    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+      validateUrl(url, options);
 
-    let address: { address: string; family: number };
-    try {
-      address = await resolvePublicAddress(url, deadline);
-    } catch (error) {
-      if (error instanceof RemoteImageError) throw error;
-      throw new RemoteImageError(502, '이미지 호스트 주소를 확인하지 못했습니다.');
-    }
-
-    const response = await requestOnce(url, address, deadline, maxBytes);
-    if (response.redirectUrl) {
-      if (redirectCount === maxRedirects) {
-        throw new RemoteImageError(502, '이미지 리디렉션 횟수가 너무 많습니다.');
+      let response: RemoteResponse;
+      if (cloudflareRuntime) {
+        // Workers fetch is routed through Cloudflare's public network. The Wrangler
+        // compatibility flag global_fetch_strictly_public keeps this path away from
+        // private origins, while validateUrl enforces the application host policy.
+        response = await requestOnceWithFetch(url, deadline, maxBytes);
+      } else {
+        let address: { address: string; family: number };
+        try {
+          address = await resolvePublicAddress(url, deadline);
+        } catch (error) {
+          if (error instanceof RemoteImageError) throw error;
+          throw new RemoteImageError(502, '이미지 호스트 주소를 확인하지 못했습니다.');
+        }
+        response = await requestOnce(url, address, deadline, maxBytes);
       }
-      url = response.redirectUrl;
-      continue;
+
+      if (response.redirectUrl) {
+        if (redirectCount === maxRedirects) {
+          throw new RemoteImageError(502, '이미지 리디렉션 횟수가 너무 많습니다.');
+        }
+        url = response.redirectUrl;
+        continue;
+      }
+
+      if (!response.body || !response.contentType) {
+        throw new RemoteImageError(415, '원격 서버가 이미지 형식을 제공하지 않았습니다.');
+      }
+
+      const bytes = await verifyAndReencode(response.body, response.contentType, maxBytes);
+      return {
+        bytes,
+        contentType: 'image/webp',
+        extension: 'webp',
+        sourceContentType: response.contentType,
+      };
     }
 
-    if (!response.body || !response.contentType) {
-      throw new RemoteImageError(415, '원격 서버가 이미지 형식을 제공하지 않았습니다.');
-    }
-
-    const bytes = await verifyAndReencode(response.body, response.contentType, maxBytes);
-    return {
-      bytes,
-      contentType: 'image/webp',
-      extension: 'webp',
-      sourceContentType: response.contentType,
-    };
+    throw new RemoteImageError(502, '원격 이미지를 가져오지 못했습니다.');
+  } finally {
+    releaseSlot?.();
   }
-
-  throw new RemoteImageError(502, '원격 이미지를 가져오지 못했습니다.');
 }

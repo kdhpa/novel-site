@@ -1,1 +1,1 @@
-export * from './generated/prisma/client';
+export * from '@novelverse/db/runtime-client';

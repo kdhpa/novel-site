@@ -2,7 +2,14 @@
 
 generator client {
   provider = "prisma-client"
+  runtime  = "nodejs"
   output   = "../src/generated/prisma"
+}
+
+generator clientCloudflare {
+  provider = "prisma-client"
+  runtime  = "cloudflare"
+  output   = "../src/generated/prisma-cloudflare"
 }
 
 datasource db {

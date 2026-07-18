@@ -6,6 +6,10 @@
     "dev": "next dev -p 3000",
     "prebuild": "npm --prefix ../.. run prisma:generate",
     "build": "next build",
+    "cf:build": "cross-env CLOUDFLARE_WORKERS_BUILD=true opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start -p 3000",
     "lint": "eslint ."
   },
