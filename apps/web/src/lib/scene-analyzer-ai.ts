@@ -77,7 +77,7 @@ export async function analyzeChapterWithAI(
   maxCount: number = 3,
   characters?: IllustrationCharacter[]
 ): Promise<{ positions: IllustrationPosition[]; totalParagraphs: number; usedAI: boolean }> {
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
 
   const paragraphs = parseHtmlToParagraphs(htmlContent);
 
@@ -220,7 +220,7 @@ export async function enhanceScenePrompt(
   contextText: string,
   characters?: IllustrationCharacter[]
 ): Promise<string> {
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
 
   const characterContext = buildCharacterContext(characters || []);
 

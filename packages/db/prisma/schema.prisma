@@ -384,6 +384,14 @@ model TagsOnNovels {
   @@map("tags_on_novels")
 }
 
+model AiProviderSetting {
+  provider  String   @id
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_provider_settings")
+}
+
 model AdminAuditLog {
   id         String   @id @default(cuid())
   adminId    String?

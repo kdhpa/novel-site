@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { BarChart3, BookOpenCheck, CalendarDays, ClipboardList, Flag, LogOut, Shield, UsersRound } from 'lucide-react';
+import { BarChart3, BookOpenCheck, CalendarDays, ClipboardList, Flag, LogOut, Shield, Sparkles, UsersRound } from 'lucide-react';
 
 const navItems = [
   { href: '/contests', label: '공모전', icon: CalendarDays },
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/reports', label: '신고', icon: Flag },
   { href: '/novels', label: '작품', icon: BookOpenCheck },
   { href: '/users', label: '계정', icon: UsersRound },
+  { href: '/ai-settings', label: 'AI 설정', icon: Sparkles },
   { href: '/audit-logs', label: '운영 로그', icon: Shield },
 ];
 

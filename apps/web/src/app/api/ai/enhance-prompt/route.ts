@@ -78,14 +78,16 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    // Check for API key configuration error
-    if (
-      error instanceof Error &&
-      (error.message.includes('GOOGLE_GEMINI_API_KEY') ||
-        error.message.includes('GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED'))
-    ) {
+    if (error instanceof Error && error.message.includes('GEMINI_PROVIDER_DISABLED')) {
       return NextResponse.json(
-        { success: false, error: 'AI 서비스가 설정되지 않았습니다.' },
+        { success: false, error: 'AI 서비스가 운영 설정에서 비활성화되었습니다.' },
+        { status: 503 }
+      );
+    }
+
+    if (error instanceof Error && error.message.includes('GOOGLE_GEMINI_API_KEY')) {
+      return NextResponse.json(
+        { success: false, error: 'AI 서비스 API 키가 설정되지 않았습니다.' },
         { status: 503 }
       );
     }

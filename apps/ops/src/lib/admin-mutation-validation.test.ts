@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseAiProviderSettingInput,
   parseRejectInput,
   parseRoleInput,
   parseSuspensionInput,
@@ -56,6 +57,15 @@ describe('관리자 변경 입력 검증', () => {
     });
     expect(parseVisibilityInput({ isPublished: 'false' }).success).toBe(false);
     expect(parseVisibilityInput({ isPublished: true, extra: true }).success).toBe(false);
+  });
+
+  it('AI 공급자 설정은 enabled boolean만 허용한다', () => {
+    expect(parseAiProviderSettingInput({ enabled: true })).toEqual({
+      success: true,
+      data: { enabled: true },
+    });
+    expect(parseAiProviderSettingInput({ enabled: 'true' }).success).toBe(false);
+    expect(parseAiProviderSettingInput({ enabled: true, apiKey: 'secret' }).success).toBe(false);
   });
 
   it('역할과 작가 인증 여부를 allowlist로 검증한다', () => {

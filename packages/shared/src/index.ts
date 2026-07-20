@@ -39,7 +39,9 @@ export type OpsAuditAction =
   | 'user.author.verify'
   | 'user.author.unverify'
   | 'user.suspend'
-  | 'user.unsuspend';
+  | 'user.unsuspend'
+  | 'ai.provider.enable'
+  | 'ai.provider.disable';
 
 export type ServerLogContext = Record<string, string | number | boolean | null | undefined>;
 
