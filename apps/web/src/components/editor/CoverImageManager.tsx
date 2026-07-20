@@ -597,7 +597,9 @@ export default function CoverImageManager({
         throw new Error(data.error || '프롬프트 개선에 실패했습니다.');
       }
 
-      setEnhancedCustomPrompt(data.data.enhancedPrompt);
+      const enhancedPrompt = data.data.enhancedPrompt;
+      setCustomPrompt(enhancedPrompt);
+      setEnhancedCustomPrompt(enhancedPrompt);
     } catch (err) {
       setError(err instanceof Error ? err.message : '프롬프트 개선 중 오류가 발생했습니다.');
     } finally {
@@ -791,7 +793,7 @@ export default function CoverImageManager({
                       AI로 프롬프트 개선
                     </Button>
                     {enhancedCustomPrompt && (
-                      <p className="text-xs text-emerald-400">이미지 생성용 설명을 개선했습니다.</p>
+                      <p className="text-xs text-emerald-400">개선된 설명을 입력란에 반영했습니다.</p>
                     )}
                   </div>
                 )}
