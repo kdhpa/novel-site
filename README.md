@@ -100,10 +100,11 @@ Workspace 계정만 허용하려면 `OPS_GOOGLE_HOSTED_DOMAIN`을 설정해 `hd`
 장애 대응 중 비밀번호 로그인이 반드시 필요할 때만 변경 승인·짧은 만료 시간과 함께
 `OPS_ALLOW_PASSWORD_LOGIN=true`를 잠시 설정하고, 복구 직후 다시 제거해야 합니다.
 
-Gemini를 프로덕션에서 사용하려면 현재 공급자 약관과 데이터 정책을 검토하고 유료 처리
-조건, 로그 보존, 제공 지역, 최소 이용 연령을 서비스 약관·화면 고지와 일치시킨 뒤에만
-`GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED=true`를 설정하세요. 키만 넣고 이 확인값을 생략하면
-Gemini 호출과 `/api/health`가 fail-closed 됩니다. 개발 환경에는 이 확인값이 필요하지 않습니다.
+Gemini 사용 여부는 Ops의 **AI 설정**에서 관리합니다. 새 환경은 기본적으로 활성화되며,
+비활성화하면 모든 Gemini 호출을 서버에서 차단합니다. API 키는 Web 배포 환경의
+`GOOGLE_GEMINI_API_KEY`로 별도 관리하고 Ops 화면이나 API에는 노출하지 않습니다. 활성화 전
+공급자 약관, 데이터 정책, 유료 처리 조건, 로그 보존, 제공 지역, 최소 이용 연령이 서비스
+약관·화면 고지와 일치하는지 확인하세요.
 
 프로덕션은 플랫폼과 무관하게 영구 이미지 저장소가 없으면 시작하지 않습니다. Supabase 서비스 역할 키를 사용하거나,
 셀프 호스팅에서 영속 볼륨의 `LOCAL_UPLOAD_ROOT`를 지정하세요. `ALLOW_EPHEMERAL_STORAGE=true`는 장애 대응용

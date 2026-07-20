@@ -66,7 +66,7 @@ function getContextPrompt(context: EnhancePromptRequest['context']): string {
 export async function enhancePromptWithGemini(
   request: EnhancePromptRequest
 ): Promise<EnhancePromptResponse> {
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
 
   const contextInfo = getContextPrompt(request.context);
 

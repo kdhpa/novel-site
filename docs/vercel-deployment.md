@@ -103,7 +103,7 @@ GitHub 저장소의 **Settings → Environments → production**에는 운영 �
 
 `NEXT_PUBLIC_IMAGE_HOSTS`, `REMOTE_IMAGE_ALLOWED_HOSTS`, 보존 기간, 사용자별 생성 한도는 `.env.example` 기준으로 운영 정책에 맞게 추가합니다. `NEXT_PUBLIC_*` 값은 빌드 결과에 포함되므로 변경 후 Web을 다시 배포합니다.
 
-Replicate나 Gemini 기능을 운영에서 사용할 때만 해당 API key와 모델 설정을 추가합니다. Gemini를 켤 때는 현재 공급자 약관과 데이터 처리 정책을 검토한 뒤 `GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED=true`를 설정합니다.
+Replicate나 Gemini 기능을 운영에서 사용할 때만 해당 API key와 모델 설정을 추가합니다. Gemini API 키는 Vercel 서버 환경 변수에만 보관하고, 런타임 활성화 여부는 Ops의 **AI 설정**에서 관리합니다.
 
 ## DB 연결과 마이그레이션
 

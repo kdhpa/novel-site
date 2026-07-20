@@ -1,40 +1,39 @@
+import { isGeminiAiEnabled } from '@novelverse/db';
+
 type GeminiPolicyEnvironment = {
-  NODE_ENV?: string;
   GOOGLE_GEMINI_API_KEY?: string;
-  GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED?: string;
 };
 
-export function getGeminiApiKey(
-  environment: GeminiPolicyEnvironment = process.env
+type GeminiEnabledReader = () => Promise<boolean>;
+
+export async function getGeminiApiKey(
+  environment: GeminiPolicyEnvironment = {
+    GOOGLE_GEMINI_API_KEY: process.env.GOOGLE_GEMINI_API_KEY,
+  },
+  readEnabled: GeminiEnabledReader = isGeminiAiEnabled,
 ) {
+  if (!(await readEnabled())) {
+    throw new Error('GEMINI_PROVIDER_DISABLED');
+  }
+
   const apiKey = environment.GOOGLE_GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GOOGLE_GEMINI_API_KEY is not configured');
   }
-
-  if (
-    environment.NODE_ENV === 'production' &&
-    environment.GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED !== 'true'
-  ) {
-    throw new Error(
-      'GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED must be true before Gemini is enabled in production'
-    );
-  }
-
   return apiKey;
 }
 
 export function geminiPolicyHealth(
-  environment: GeminiPolicyEnvironment = process.env
+  enabled: boolean,
+  environment: GeminiPolicyEnvironment = {
+    GOOGLE_GEMINI_API_KEY: process.env.GOOGLE_GEMINI_API_KEY,
+  },
 ): { status: 'up' | 'down'; detail: string } {
-  if (!environment.GOOGLE_GEMINI_API_KEY?.trim()) {
-    return { status: 'up', detail: 'disabled' };
+  if (!enabled) {
+    return { status: 'up', detail: 'disabled by operations' };
   }
-  if (
-    environment.NODE_ENV === 'production' &&
-    environment.GEMINI_PRODUCTION_POLICY_ACKNOWLEDGED !== 'true'
-  ) {
-    return { status: 'down', detail: 'production provider policy is not acknowledged' };
+  if (!environment.GOOGLE_GEMINI_API_KEY?.trim()) {
+    return { status: 'down', detail: 'GOOGLE_GEMINI_API_KEY is not configured' };
   }
   return { status: 'up', detail: 'enabled' };
 }

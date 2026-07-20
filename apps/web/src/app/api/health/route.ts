@@ -5,6 +5,7 @@ import { validateProxyTrustConfiguration } from '@novelverse/shared/proxy';
 import { hasPersistentLocalStorage, hasSupabaseConfig } from '@/lib/supabase';
 import { geminiPolicyHealth } from '@/lib/server/ai-provider-policy';
 import { isAuthEmailConfigured } from '@/lib/server/auth-email';
+import { isGeminiAiEnabled } from '@novelverse/db';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -115,7 +116,16 @@ export async function GET(request: NextRequest) {
 
   const storage = storageCheck();
   const proxyTrust = proxyTrustCheck();
-  const aiProviderPolicy = geminiPolicyHealth();
+  let aiProviderPolicy: HealthCheck;
+  try {
+    aiProviderPolicy = geminiPolicyHealth(await isGeminiAiEnabled());
+  } catch (error) {
+    aiProviderPolicy = {
+      status: 'down',
+      detail: 'AI provider runtime setting could not be read',
+    };
+    logServerError('health.ai-provider-setting', error, { requestId });
+  }
   const retentionPolicy = retentionPolicyCheck();
   const authEmail = authEmailCheck();
   const privacyContact = privacyContactCheck();

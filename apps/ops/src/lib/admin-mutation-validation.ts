@@ -157,6 +157,20 @@ export function parseVisibilityInput(value: unknown): ValidationResult<{ isPubli
   return success({ isPublished: value.isPublished });
 }
 
+export function parseAiProviderSettingInput(
+  value: unknown,
+): ValidationResult<{ enabled: boolean }> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['enabled'])) {
+    return failure('허용되지 않은 입력 항목이 포함되어 있습니다.');
+  }
+
+  if (typeof value.enabled !== 'boolean') {
+    return failure('AI 사용 여부를 true 또는 false로 지정해 주세요.');
+  }
+
+  return success({ enabled: value.enabled });
+}
+
 export function parseRoleInput(
   value: unknown
 ): ValidationResult<{ role: Role; isVerifiedAuthor?: boolean }> {
