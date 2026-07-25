@@ -17,8 +17,9 @@ function createPrismaClient() {
   const max = positiveInteger(process.env.DB_POOL_MAX || process.env.DATABASE_POOL_MAX)
     ?? (process.env.VERCEL ? 2 : 10);
   const maxUses = positiveInteger(process.env.DB_POOL_MAX_USES);
+  const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     max,
     ...(maxUses ? { maxUses } : {}),
     connectionTimeoutMillis: 10_000,

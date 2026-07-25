@@ -16,6 +16,9 @@ export default defineConfig({
   datasource: {
     // Prisma CLI operations need a direct connection when DATABASE_URL points
     // at a transaction pooler (for example Supabase/PgBouncer).
-    url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"]
+      || process.env["POSTGRES_URL_NON_POOLING"]
+      || process.env["DATABASE_URL"]
+      || process.env["POSTGRES_PRISMA_URL"],
   },
 });
