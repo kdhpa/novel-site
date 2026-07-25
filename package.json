@@ -2,7 +2,7 @@
   "name": "novelverse-workspace",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "npm@11.4.2",
+  "packageManager": "npm@11.11.1",
   "engines": {
     "node": ">=22 <25",
     "npm": ">=10"
@@ -13,7 +13,14 @@
   ],
   "overrides": {
     "@hono/node-server": "1.19.14",
-    "postcss": "8.5.19"
+    "eslint-plugin-react-hooks": "7.0.1",
+    "find-my-way": "9.7.0",
+    "next@16.2.11": {
+      "sharp": "$sharp"
+    },
+    "postcss": "8.5.23",
+    "sharp": "$sharp",
+    "valibot": "1.4.2"
   },
   "scripts": {
     "dev": "npm run dev -w @novelverse/web",
@@ -47,10 +54,13 @@
     "@types/pg": "^8.16.0",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.10",
+    "eslint-config-next": "16.2.10",
     "pg": "^8.17.2",
     "prisma": "^7.8.0",
     "typescript": "^5",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "sharp": "0.35.3"
   }
 }
