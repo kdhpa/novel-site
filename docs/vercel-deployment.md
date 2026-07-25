@@ -1,32 +1,53 @@
-# Vercel Web 배포 가이드
+# Vercel Web·Ops 배포 가이드
 
-NovelVerse의 운영 배포 대상은 독자·작가 서비스인 **Web 하나뿐**입니다. GitHub 저장소를 Vercel 프로젝트 하나에 연결하고 Root Directory를 `apps/web`으로 지정합니다.
+NovelVerse는 Web과 관리자 전용 Ops를 서로 다른 Vercel 프로젝트로 배포합니다. 두 프로젝트는 같은 GitHub 저장소를 사용하되 Root Directory와 환경변수를 분리합니다.
 
 | 배포 대상 | Vercel 프로젝트 예시 | Root Directory |
 | --- | --- | --- |
 | Web | `novelverse-web` | `apps/web` |
+| Ops | `novelverse-ops` | `apps/ops` |
 
-Web 프로젝트는 Next.js, Node.js 22.x, `master` Production Branch를 사용합니다. `packages/db`, `packages/shared`와 루트 `package-lock.json`을 참조하므로 **Include source files outside of the Root Directory**를 활성화합니다. 새 Vercel 모노레포 프로젝트에서는 일반적으로 기본 활성화되어 있지만 직접 확인합니다.
+두 프로젝트는 Next.js, Node.js 22.x, `master` Production Branch를 사용합니다. 내부 패키지와 루트 `package-lock.json`을 참조하므로 **Include source files outside of the Root Directory**를 활성화합니다.
 
-현재 운영 DB는 AWS `ap-northeast-1`에 있으므로 `apps/web/vercel.json`은 Function region을 같은 도쿄 리전인 `hnd1`로 고정합니다. DB 리전을 옮기면 가장 가까운 Vercel 리전으로 함께 변경합니다.
+현재 운영 DB는 AWS `ap-northeast-1`에 있으므로 두 앱의 Function region을 도쿄 `hnd1`로 고정합니다.
 
 Vercel Hobby는 개인·비상업 용도에 한정됩니다. 개인 테스트 공개는 Hobby로 시작할 수 있지만 NovelVerse를 상업 서비스로 운영한다면 [Vercel 플랜 정책](https://vercel.com/docs/plans/hobby)과 [Fair Use 정책](https://vercel.com/docs/limits/fair-use-guidelines)을 확인하고 적합한 유료 플랜을 선택합니다.
 
-## Ops는 로컬 전용
+## Ops 관리자 배포
 
-`apps/ops`는 외부에 배포하지 않는 운영자용 로컬 도구입니다.
+`apps/ops`는 별도 관리자 주소로 배포합니다.
 
-- 저장소 루트에서 `npm run dev:ops`로 실행합니다.
-- 접속 주소는 `http://localhost:3002`만 사용합니다.
-- Ops용 Vercel 프로젝트를 만들지 않습니다.
-- `apps/ops/vercel.json`은 실수로 시작된 Vercel 빌드를 명시적으로 실패시킵니다.
-- GitHub `production`에 Ops 배포용 Secret이나 Variable을 등록하지 않습니다.
-- Ops 도메인과 운영 OAuth callback을 만들지 않습니다.
-- Ops는 Vercel Deployment Check, 운영 smoke test, Vercel rollback 대상이 아닙니다.
-- `NEXT_PUBLIC_OPS_URL=http://localhost:3002`는 로컬 개발에서만 사용합니다.
-- Vercel Web 프로젝트에는 `NEXT_PUBLIC_OPS_URL`을 설정하지 않습니다. 따라서 운영 Web UI는 로컬 Ops 링크를 노출하지 않습니다.
+- 권장 주소는 `https://admin.<domain>`이며 최소한 Vercel HTTPS 주소를 사용합니다.
+- 모든 관리 화면과 변경 API는 로그인 후 DB의 현재 `ADMIN` 역할을 확인합니다.
+- Google SSO와 MFA를 우선 사용하고 비밀번호 로그인은 필요할 때만 활성화합니다.
+- 가능하면 Cloudflare Access 같은 추가 접근 보호를 관리자 주소 앞에 둡니다.
+- Web 프로젝트에는 관리자 주소를 넣지 않아 일반 사용자 화면에서 노출하지 않습니다.
+- 로컬 개발은 계속 `npm run dev:ops`와 `http://localhost:3002`를 사용합니다.
 
-CI가 모노레포 품질 확인을 위해 Ops를 build·test할 수는 있지만, 이는 Ops를 GitHub나 Vercel에서 배포한다는 뜻이 아닙니다.
+Ops Production 환경변수:
+
+| 이름 | 설명 |
+| --- | --- |
+| `DATABASE_URL` | Web과 같은 운영 PostgreSQL pooler URL |
+| `DB_POOL_MAX` | 초기 권장값 `2` |
+| `AUTH_SECRET` | 32자 이상의 Ops 전용 세션 서명 키 |
+| `AUTH_URL` | Ops 운영 원본 URL |
+| `AUTH_TRUST_HOST` | `true` |
+| `TRUSTED_PROXY_PROVIDER` | `vercel` |
+| `GOOGLE_CLIENT_ID` | Ops Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Ops Google OAuth secret |
+| `OPS_ALLOW_PASSWORD_LOGIN` | Google SSO 사용 시 `false`; 필요할 때만 `true` |
+| `OPS_GOOGLE_HOSTED_DOMAIN` | Google Workspace 도메인을 제한할 때만 설정 |
+| `NEXT_PUBLIC_SUPABASE_URL` | 이미지 표시용 Supabase URL |
+| `NEXT_PUBLIC_IMAGE_HOSTS` | 추가 이미지 호스트가 있을 때만 설정 |
+
+Google OAuth callback URI:
+
+```text
+https://<ops-domain>/api/auth/callback/google
+```
+
+Ops는 관리자 계정을 자동 생성하지 않습니다. 로그인 계정은 운영 DB에서 `ADMIN` 역할이어야 하며 정지 상태가 아니어야 합니다.
 
 ## 배포 전 필수 조건
 
@@ -99,7 +120,7 @@ GitHub 저장소의 **Settings → Environments → production**에는 운영 �
 | `NEXT_PUBLIC_PRIVACY_CONTACT` | 모니터링되는 이메일 또는 HTTPS 요청 페이지 |
 | `CRON_SECRET` | 32자 이상의 무작위 유지보수 Bearer secret |
 
-`NEXT_PUBLIC_OPS_URL`은 이 목록에 포함되지 않습니다. 해당 값은 로컬 개발의 `http://localhost:3002` 연결에만 사용하며 Vercel Web에는 절대 설정하지 않습니다.
+`NEXT_PUBLIC_OPS_URL`은 이 목록에 포함되지 않습니다. 관리자 주소는 일반 사용자용 Web 환경변수에 등록하지 않습니다.
 
 `NEXT_PUBLIC_IMAGE_HOSTS`, `REMOTE_IMAGE_ALLOWED_HOSTS`, 보존 기간, 사용자별 생성 한도는 `.env.example` 기준으로 운영 정책에 맞게 추가합니다. `NEXT_PUBLIC_*` 값은 빌드 결과에 포함되므로 변경 후 Web을 다시 배포합니다.
 
@@ -136,7 +157,7 @@ Google Cloud Console의 운영 OAuth client에는 Web callback URI 하나만 등
 https://<web-domain>/api/auth/callback/google
 ```
 
-Ops callback URI는 운영 OAuth client에 추가하지 않습니다. Vercel 기본 도메인에서 커스텀 도메인으로 바꿀 때는 Web callback URI와 `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_WEB_URL`을 함께 변경한 뒤 다시 배포합니다. 임시 Preview URL은 운영 OAuth callback으로 사용하지 않습니다.
+Ops는 별도 OAuth client 사용을 권장하며 Ops 운영 주소의 callback URI만 등록합니다. Vercel 기본 도메인에서 커스텀 도메인으로 바꿀 때는 각 앱의 URL 환경변수와 OAuth callback URI를 함께 변경한 뒤 다시 배포합니다. 임시 Preview URL은 운영 OAuth callback으로 사용하지 않습니다.
 
 ## 유지보수 Cron
 
