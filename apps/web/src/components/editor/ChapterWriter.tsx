@@ -13,6 +13,10 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { formatHtmlContent } from '@/lib/text-formatter';
 import { isOptimizableImageSource } from '@/lib/image-hosts';
 import {
+  ILLUSTRATION_FILE_SIZE_LABEL,
+  MAX_ILLUSTRATION_FILE_BYTES,
+} from '@/lib/illustration-upload-limits';
+import {
   createImageJobClientRequestId,
   isImageJobAbortError,
   pollImageJob,
@@ -188,6 +192,7 @@ export default function ChapterWriter({
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<DraftData | null>(null);
@@ -195,6 +200,8 @@ export default function ChapterWriter({
   const imageGenerationInFlightRef = useRef(false);
   const imageGenerationAbortRef = useRef<AbortController | null>(null);
   const imageGenerationMountedRef = useRef(false);
+  const imageUploadInFlightRef = useRef(false);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState(() =>
     snapshotOf(initialFormRef.current)
   );
@@ -638,10 +645,61 @@ export default function ChapterWriter({
     editor.chain().focus().setImage({ src: aiImage, alt: `${title || '회차'} 삽화` }).run();
   };
 
+  const uploadIllustration = async (file: File) => {
+    if (imageUploadInFlightRef.current) return;
+
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      setError('JPEG, PNG, GIF, WEBP 이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.size > MAX_ILLUSTRATION_FILE_BYTES) {
+      setError(`파일 크기는 ${ILLUSTRATION_FILE_SIZE_LABEL} 이하여야 합니다.`);
+      return;
+    }
+
+    imageUploadInFlightRef.current = true;
+    setIsUploadingImage(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('novelId', novelId);
+
+      const response = await fetch('/api/upload/illustration', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await readJson<{ url: string }>(response);
+
+      if (!response.ok || !data.success || !data.data?.url) {
+        throw new Error(data.error || '삽화 업로드에 실패했습니다.');
+      }
+
+      setAiImage(data.data.url);
+      setAiImagePrompt(`직접 업로드: ${file.name}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '삽화 업로드 중 오류가 발생했습니다.');
+    } finally {
+      imageUploadInFlightRef.current = false;
+      setIsUploadingImage(false);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = '';
+    }
+  };
+
   return (
-    <div className="min-h-screen pb-28 sm:pb-0" aria-busy={isSaving || isGeneratingImage}>
+    <div
+      className="min-h-screen pb-28 sm:pb-0"
+      aria-busy={isSaving || isGeneratingImage || isUploadingImage}
+    >
       <span className="sr-only" role="status" aria-live="polite">
-        {isSaving ? '회차를 저장하고 있습니다.' : isGeneratingImage ? '삽화를 생성하고 있습니다.' : ''}
+        {isSaving
+          ? '회차를 저장하고 있습니다.'
+          : isGeneratingImage
+            ? '삽화를 생성하고 있습니다.'
+            : isUploadingImage
+              ? '삽화를 업로드하고 있습니다.'
+              : ''}
       </span>
       <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-3 py-3 backdrop-blur sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -855,6 +913,27 @@ export default function ChapterWriter({
               </span>
             </aside>
             <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                ref={imageFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                disabled={isUploadingImage || isGeneratingImage}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadIllustration(file);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => imageFileInputRef.current?.click()}
+                disabled={isUploadingImage || isGeneratingImage}
+                aria-busy={isUploadingImage}
+                className="inline-flex min-h-10 items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-accent-muted hover:bg-background-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                {isUploadingImage ? '업로드 중' : '파일 업로드'}
+              </button>
               <button
                 type="button"
                 onClick={suggestImagePrompt}
