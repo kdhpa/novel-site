@@ -35,6 +35,7 @@ const STATUS_MAP: Record<string, ImageJobStatus> = {
   failed: 'failed',
   canceled: 'canceled',
   cancelled: 'canceled',
+  aborted: 'canceled',
 };
 
 const IMAGE_JOB_TYPES = new Set<ImageJobType>([
@@ -120,7 +121,23 @@ export function getImageJobStorageTarget(job: {
   return null;
 }
 
-export function finalizationLeaseClaimWhere(id: string, userId: string, now: Date) {
+export function finalizationLeaseClaimWhere(
+  id: string,
+  userId: string,
+  now: Date,
+  options: { ignoreRetrySchedule?: boolean } = {}
+) {
+  const retryScheduleCondition = options.ignoreRetrySchedule
+    ? []
+    : [
+        {
+          OR: [
+            { nextFinalizationAt: null },
+            { nextFinalizationAt: { lte: now } },
+          ],
+        },
+      ];
+
   return {
     id,
     userId,
@@ -129,12 +146,7 @@ export function finalizationLeaseClaimWhere(id: string, userId: string, now: Dat
     status: { in: ['starting', 'processing'] },
     finalizationAttempts: { lt: 5 },
     AND: [
-      {
-        OR: [
-          { nextFinalizationAt: null },
-          { nextFinalizationAt: { lte: now } },
-        ],
-      },
+      ...retryScheduleCondition,
       {
         OR: [
           { finalizationLeaseUntil: null },

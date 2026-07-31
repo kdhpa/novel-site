@@ -204,6 +204,8 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
       expect(approveResponse.request().postDataJSON()).toEqual({ reviewConfirmed: true });
       const approvePayload = await approveResponse.json() as ApiEnvelope<unknown>;
       expect(approvePayload.success, approvePayload.error).toBe(true);
+      await expect(adminPage).toHaveURL(`${OPS_URL}/reviews`);
+      await expect(adminPage.getByRole('heading', { name: '작품 심사' })).toBeVisible();
 
       const readerPage = await readerContext.newPage();
       await readerPage.goto(`${WEB_URL}/novels/${novelId}`);

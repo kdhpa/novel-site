@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { logServerError } from '@novelverse/shared';
 import { validateProxyTrustConfiguration } from '@novelverse/shared/proxy';
-import { hasPersistentLocalStorage, hasSupabaseConfig } from '@/lib/supabase';
-import { geminiPolicyHealth } from '@/lib/server/ai-provider-policy';
+import {
+  hasPersistentLocalStorage,
+  hasSupabaseConfig,
+  hasSupabaseS3Config,
+} from '@/lib/supabase';
+import {
+  geminiPolicyHealth,
+  replicatePolicyHealth,
+} from '@/lib/server/ai-provider-policy';
 import { isAuthEmailConfigured } from '@/lib/server/auth-email';
 import { isGeminiAiEnabled } from '@novelverse/db';
 
@@ -17,17 +24,15 @@ type HealthCheck = {
 };
 
 function storageCheck(): HealthCheck {
-  const persistentRequired =
-    process.env.NODE_ENV === 'production' && process.env.ALLOW_EPHEMERAL_STORAGE !== 'true';
-
+  if (hasSupabaseS3Config) return { status: 'up', detail: 'remote-s3' };
   if (hasSupabaseConfig) return { status: 'up', detail: 'remote' };
   if (hasPersistentLocalStorage) return { status: 'up', detail: 'persistent-local' };
-  if (persistentRequired) return { status: 'down', detail: 'persistent storage is not configured' };
+  if (process.env.NODE_ENV === 'production') {
+    return { status: 'down', detail: 'persistent storage is not configured' };
+  }
   return {
     status: 'degraded',
-    detail: process.env.NODE_ENV === 'production'
-      ? 'ephemeral storage explicitly allowed'
-      : 'development local storage',
+    detail: 'development local storage',
   };
 }
 
@@ -116,6 +121,7 @@ export async function GET(request: NextRequest) {
 
   const storage = storageCheck();
   const proxyTrust = proxyTrustCheck();
+  const imageProvider = replicatePolicyHealth();
   let aiProviderPolicy: HealthCheck;
   try {
     aiProviderPolicy = geminiPolicyHealth(await isGeminiAiEnabled());
@@ -133,6 +139,7 @@ export async function GET(request: NextRequest) {
     database,
     storage,
     proxyTrust,
+    imageProvider,
     aiProviderPolicy,
     retentionPolicy,
     authEmail,

@@ -192,6 +192,7 @@ function CommentBody({
 export default function CommentSection({ novelId }: CommentSectionProps) {
   const { data: session, status } = useSession();
   const latestRequestRef = useRef(0);
+  const pendingMutationRef = useRef<string | null>(null);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -243,17 +244,31 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     void loadComments(1);
   }, [loadComments]);
 
+  const beginMutation = (key: string) => {
+    if (pendingMutationRef.current) return false;
+    pendingMutationRef.current = key;
+    setPendingKey(key);
+    return true;
+  };
+
+  const finishMutation = (key: string) => {
+    if (pendingMutationRef.current !== key) return;
+    pendingMutationRef.current = null;
+    setPendingKey(null);
+  };
+
   const submitComment = async (event: FormEvent) => {
     event.preventDefault();
-    if (!content.trim() || !session?.user) return;
-    setPendingKey('create');
+    const mutationKey = 'create';
+    if (!content.trim() || !session?.user || !beginMutation(mutationKey)) return;
     setFormError('');
+    const clientRequestId = crypto.randomUUID();
 
     try {
       const response = await fetch(`/api/novels/${novelId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, clientRequestId }),
       });
       await readApiResult(response, '댓글 작성에 실패했습니다.');
       setContent('');
@@ -261,21 +276,27 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '댓글 작성 중 오류가 발생했습니다.');
     } finally {
-      setPendingKey(null);
+      finishMutation(mutationKey);
     }
   };
 
   const submitReply = async (event: FormEvent) => {
     event.preventDefault();
     if (!replyContent.trim() || !replyingTo || !session?.user) return;
-    setPendingKey(`reply:${replyingTo.id}`);
+    const mutationKey = `reply:${replyingTo.id}`;
+    if (!beginMutation(mutationKey)) return;
     setReplyError('');
+    const clientRequestId = crypto.randomUUID();
 
     try {
       const response = await fetch(`/api/novels/${novelId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: replyContent, parentId: replyingTo.id }),
+        body: JSON.stringify({
+          content: replyContent,
+          parentId: replyingTo.id,
+          clientRequestId,
+        }),
       });
       await readApiResult(response, '답글 작성에 실패했습니다.');
       setReplyContent('');
@@ -284,7 +305,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     } catch (error) {
       setReplyError(error instanceof Error ? error.message : '답글 작성 중 오류가 발생했습니다.');
     } finally {
-      setPendingKey(null);
+      finishMutation(mutationKey);
     }
   };
 
@@ -297,7 +318,8 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
   const saveEdit = async (event: FormEvent) => {
     event.preventDefault();
     if (!editingComment || !editContent.trim()) return;
-    setPendingKey(`edit:${editingComment.id}`);
+    const mutationKey = `edit:${editingComment.id}`;
+    if (!beginMutation(mutationKey)) return;
     setEditError('');
 
     try {
@@ -315,14 +337,15 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     } catch (error) {
       setEditError(error instanceof Error ? error.message : '댓글 수정 중 오류가 발생했습니다.');
     } finally {
-      setPendingKey(null);
+      finishMutation(mutationKey);
     }
   };
 
   const deleteComment = async () => {
     if (!commentToDelete) return;
     const target = commentToDelete;
-    setPendingKey(`delete:${target.id}`);
+    const mutationKey = `delete:${target.id}`;
+    if (!beginMutation(mutationKey)) return;
     setListError('');
 
     try {
@@ -340,7 +363,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
       setCommentToDelete(null);
       setListError(error instanceof Error ? error.message : '댓글 삭제 중 오류가 발생했습니다.');
     } finally {
-      setPendingKey(null);
+      finishMutation(mutationKey);
     }
   };
 

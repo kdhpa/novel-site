@@ -90,36 +90,65 @@ export async function POST(request: NextRequest) {
       ]);
     }
 
-    let result: AnalyzeChapterResponse & { usedAI?: boolean };
+    let result: AnalyzeChapterResponse;
 
     if (useAI) {
       try {
-        // Try AI-powered analysis first
-        result = await analyzeChapterWithAI(
+        const aiResult = await analyzeChapterWithAI(
           body.content,
           maxCount,
           body.characters
         );
+
+        result = aiResult.usedAI
+          ? {
+              ...aiResult,
+              usedAI: true,
+              analysisMode: 'gemini',
+              fallbackUsed: false,
+              notice: 'Gemini AI가 본문을 분석해 삽화 장면을 추천했습니다.',
+            }
+          : {
+              ...aiResult,
+              usedAI: false,
+              analysisMode: 'rules',
+              fallbackUsed: false,
+              notice:
+                aiResult.totalParagraphs < 3
+                  ? '분석 가능한 문단이 3개 미만이라 Gemini를 사용하지 않고 로컬 규칙 결과를 표시했습니다.'
+                  : '수동 삽화 표시가 추천 개수를 채워 Gemini를 사용하지 않고 해당 위치를 표시했습니다.',
+            };
       } catch (aiError) {
         logServerError('gemini.scene-analysis-fallback', aiError, {
           userId: session.user.id,
         });
-        // Fallback to keyword-based analysis
         const keywordResult = analyzeChapterForIllustrations(
           body.content,
           maxCount,
           autoDetect
         );
-        result = { ...keywordResult, usedAI: false };
+        result = {
+          ...keywordResult,
+          usedAI: false,
+          analysisMode: 'rules',
+          fallbackUsed: true,
+          notice:
+            'Gemini 분석에 실패해 규칙 기반 결과로 대체했습니다. 잠시 후 다시 시도할 수 있습니다.',
+        };
       }
     } else {
-      // Use keyword-based analysis
       const keywordResult = analyzeChapterForIllustrations(
         body.content,
         maxCount,
         autoDetect
       );
-      result = { ...keywordResult, usedAI: false };
+      result = {
+        ...keywordResult,
+        usedAI: false,
+        analysisMode: 'rules',
+        fallbackUsed: false,
+        notice: 'Gemini를 사용하지 않고 로컬 규칙으로 장면을 분석했습니다.',
+      };
     }
 
     return NextResponse.json<ApiResponse<AnalyzeChapterResponse>>({

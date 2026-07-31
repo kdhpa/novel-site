@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildIdempotentCommentId,
   commentCreateSchema,
   commentPatchSchema,
   DELETED_COMMENT_CONTENT,
@@ -15,6 +16,24 @@ describe('comment schemas', () => {
     expect(() => commentCreateSchema.parse({ content: '댓글', role: 'ADMIN' })).toThrow();
     expect(() => commentPatchSchema.parse({ content: 'x'.repeat(1001) })).toThrow();
     expect(() => commentPatchSchema.parse({ content: DELETED_COMMENT_CONTENT })).toThrow();
+  });
+
+  it('댓글 생성 요청 ID를 제한하고 사용자별 결정적 댓글 ID를 만든다', () => {
+    const clientRequestId = '0198a574-bb7a-7e1a-a8a8-77983a281f05';
+    expect(commentCreateSchema.parse({ content: '댓글', clientRequestId })).toEqual({
+      content: '댓글',
+      clientRequestId,
+    });
+    expect(() => commentCreateSchema.parse({
+      content: '댓글',
+      clientRequestId: 'short',
+    })).toThrow();
+    expect(buildIdempotentCommentId('user-a', clientRequestId)).toMatch(
+      /^comment_[a-f0-9]{64}$/,
+    );
+    expect(buildIdempotentCommentId('user-b', clientRequestId)).not.toBe(
+      buildIdempotentCommentId('user-a', clientRequestId),
+    );
   });
 });
 

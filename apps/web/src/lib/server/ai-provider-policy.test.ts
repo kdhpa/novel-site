@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { geminiPolicyHealth, getGeminiApiKey } from './ai-provider-policy';
+import {
+  geminiPolicyHealth,
+  getGeminiApiKey,
+  replicatePolicyHealth,
+} from './ai-provider-policy';
 
 describe('Gemini runtime policy', () => {
   it('Ops 설정이 활성화되고 키가 있으면 환경과 관계없이 허용한다', async () => {
@@ -24,6 +28,22 @@ describe('Gemini runtime policy', () => {
     expect(geminiPolicyHealth(true, {})).toEqual({
       status: 'down',
       detail: 'GOOGLE_GEMINI_API_KEY is not configured',
+    });
+  });
+});
+
+describe('Replicate runtime policy', () => {
+  it('reports a missing API token as down', () => {
+    expect(replicatePolicyHealth({ REPLICATE_API_TOKEN: ' ' })).toEqual({
+      status: 'down',
+      detail: 'REPLICATE_API_TOKEN is not configured',
+    });
+  });
+
+  it('reports a configured API token without exposing it', () => {
+    expect(replicatePolicyHealth({ REPLICATE_API_TOKEN: 'replicate-secret' })).toEqual({
+      status: 'up',
+      detail: 'configured',
     });
   });
 });

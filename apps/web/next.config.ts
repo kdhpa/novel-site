@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
     : {}),
   transpilePackages: ['@novelverse/db', '@novelverse/auth', '@novelverse/shared'],
   serverExternalPackages: [
+    '@aws-sdk/client-s3',
     '@prisma/client',
     '@prisma/adapter-pg',
     'pg',

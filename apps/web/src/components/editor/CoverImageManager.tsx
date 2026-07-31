@@ -257,6 +257,7 @@ export default function CoverImageManager({
           const created = await startImageJob(job.requestInput, {
             clientRequestId: job.clientRequestId,
             signal: controller.signal,
+            maxAttempts: 4,
           });
           if (jobPollingControllersRef.current.get(pollingKey) !== controller) return;
           job = {
@@ -270,11 +271,6 @@ export default function CoverImageManager({
             updatedAt: new Date().toISOString(),
           };
           updateJob(job);
-          if (startingJobClientRequestIdRef.current === pollingKey) {
-            startingJobClientRequestIdRef.current = null;
-            generationInFlightRef.current = false;
-            setIsGenerating(false);
-          }
         }
 
         const completed = await pollImageJob(
@@ -349,6 +345,8 @@ export default function CoverImageManager({
     .filter((job) => pendingCoverJobStatuses.has(job.status))
     .map((job) => `${job.clientRequestId}:${job.id}:${job.token}`)
     .join('|');
+  const isGenerationPending =
+    isGenerating || jobs.some((job) => pendingCoverJobStatuses.has(job.status));
 
   useEffect(() => {
     if (!pendingJobSignature || loadedJobStorageKey !== jobStorageKey) return;
@@ -384,7 +382,7 @@ export default function CoverImageManager({
   };
 
   const handleGenerateCover = () => {
-    if (generationInFlightRef.current) return;
+    if (generationInFlightRef.current || isGenerationPending) return;
 
     if (!ownerUserId || !jobStorageKey) {
       setError('로그인 정보를 확인한 뒤 다시 시도해 주세요.');
@@ -712,7 +710,7 @@ export default function CoverImageManager({
                 <select
                   value={style}
                   onChange={(e) => setStyle(e.target.value as CoverStyle)}
-                  disabled={disabled || isGenerating}
+                  disabled={disabled || isGenerationPending}
                   className="w-full rounded-lg border border-border bg-background px-4 py-2 text-foreground focus:border-primary focus:ring-2 focus:ring-primary disabled:opacity-50"
                 >
                   {styles.map((s) => (
@@ -731,7 +729,7 @@ export default function CoverImageManager({
                 <select
                   value={mood}
                   onChange={(e) => setMood(e.target.value as CoverMood)}
-                  disabled={disabled || isGenerating}
+                  disabled={disabled || isGenerationPending}
                   className="w-full rounded-lg border border-border bg-background px-4 py-2 text-foreground focus:border-primary focus:ring-2 focus:ring-primary disabled:opacity-50"
                 >
                   {moods.map((m) => (
@@ -751,7 +749,7 @@ export default function CoverImageManager({
                       name="promptMode"
                       checked={!useCustomPrompt}
                       onChange={() => setUseCustomPrompt(false)}
-                      disabled={disabled || isGenerating}
+                      disabled={disabled || isGenerationPending}
                       className="h-4 w-4 shrink-0 accent-primary focus:ring-primary"
                     />
                     <span className="text-sm text-zinc-300">자동 프롬프트</span>
@@ -762,7 +760,7 @@ export default function CoverImageManager({
                       name="promptMode"
                       checked={useCustomPrompt}
                       onChange={() => setUseCustomPrompt(true)}
-                      disabled={disabled || isGenerating}
+                      disabled={disabled || isGenerationPending}
                       className="h-4 w-4 shrink-0 accent-primary focus:ring-primary"
                     />
                     <span className="text-sm text-zinc-300">커스텀 프롬프트</span>
@@ -778,14 +776,14 @@ export default function CoverImageManager({
                         setEnhancedCustomPrompt('');
                       }}
                       placeholder="원하는 표지 이미지를 설명해주세요..."
-                      disabled={disabled || isGenerating || isEnhancing}
+                      disabled={disabled || isGenerationPending || isEnhancing}
                       rows={3}
                       className="w-full rounded-lg border border-border bg-background px-4 py-2 text-foreground placeholder:text-zinc-500 focus:border-primary focus:ring-2 focus:ring-primary disabled:opacity-50"
                     />
                     <Button
                       type="button"
                       onClick={handleEnhancePrompt}
-                      disabled={disabled || !customPrompt.trim() || !geminiAdultConfirmed || isEnhancing || isGenerating}
+                      disabled={disabled || !customPrompt.trim() || !geminiAdultConfirmed || isEnhancing || isGenerationPending}
                       isLoading={isEnhancing}
                       variant="secondary"
                       size="sm"
@@ -809,8 +807,8 @@ export default function CoverImageManager({
               <Button
                 type="button"
                 onClick={handleGenerateCover}
-                isLoading={isGenerating}
-                disabled={disabled || !title}
+                isLoading={isGenerationPending}
+                disabled={disabled || !title || isGenerationPending}
                 fullWidth
               >
                 이미지 생성 작업 시작

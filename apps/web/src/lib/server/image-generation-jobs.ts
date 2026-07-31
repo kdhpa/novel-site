@@ -10,8 +10,10 @@ import {
   buildCharacterPortraitImageRequest,
   buildNovelCoverImageRequest,
   createImagePrediction,
+  getImageProviderErrorDetails,
 } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
+import { hasDurableImageStorage } from '@/lib/supabase';
 import type { AIImageRequest, CoverGenerationOptions } from '@/types';
 import { ApiError } from './api';
 import { assertGlobalAiBudget } from './ai-budget';
@@ -340,6 +342,13 @@ export async function createPersistentImageGenerationJob(
   clientRequestId: string,
   clientIp: string
 ): Promise<CreatedImageJob> {
+  if (process.env.NODE_ENV === 'production' && !hasDurableImageStorage) {
+    throw new ApiError(
+      503,
+      '영구 이미지 저장소가 설정되지 않아 이미지 생성을 시작할 수 없습니다. 관리자에게 문의해 주세요.'
+    );
+  }
+
   const now = new Date();
   await runImageJobMaintenance(now);
   const expiresAt = new Date(now.getTime() + IMAGE_JOB_TOKEN_TTL_MS);
@@ -439,11 +448,13 @@ export async function createPersistentImageGenerationJob(
       const prediction = await createImagePrediction(prepared.imageRequest);
       const providerStatus = normalizeImageJobStatus(prediction.status);
       const persistedStatus = providerStatus === 'succeeded' ? 'processing' : providerStatus;
-      const providerError = providerStatus === 'failed'
-        ? '이미지 생성 제공자가 작업에 실패했습니다.'
-        : providerStatus === 'canceled'
-          ? '이미지 생성 작업이 취소되었습니다.'
-          : null;
+      const providerError = prediction.failure?.userMessage || (
+        providerStatus === 'failed'
+          ? '이미지 생성 제공자가 작업에 실패했습니다.'
+          : providerStatus === 'canceled'
+            ? '이미지 생성 작업이 취소되었습니다.'
+            : null
+      );
 
       await prisma.imageGenerationJob.updateMany({
         where: {
@@ -458,6 +469,9 @@ export async function createPersistentImageGenerationJob(
           status: persistedStatus,
           providerImageUrl: prediction.imageUrl || null,
           error: providerError,
+          lastFinalizationError: prediction.failure
+            ? `provider_${prediction.failure.code}`
+            : null,
           finalizationLeaseToken: null,
           finalizationLeaseUntil: null,
         },
@@ -480,11 +494,36 @@ export async function createPersistentImageGenerationJob(
         });
         throw error;
       }
+      const providerFailure = getImageProviderErrorDetails(error);
       logServerError('image-job-provider-create', new Error('AI provider request failed'), {
         jobId: job.id,
         userId,
         errorType: error instanceof Error ? error.name.slice(0, 80) : 'UnknownError',
+        providerCode: providerFailure.code,
+        providerStatus: providerFailure.status,
+        retryable: providerFailure.retryable,
       });
+      if (providerFailure.retryable) {
+        await prisma.imageGenerationJob.updateMany({
+          where: {
+            id: job.id,
+            userId,
+            providerPredictionId: null,
+            finalizationLeaseToken: creationLeaseToken,
+          },
+          data: {
+            status: 'starting',
+            error: null,
+            lastFinalizationError: `provider_create_${providerFailure.code}`,
+            finalizationLeaseToken: null,
+            finalizationLeaseUntil: null,
+          },
+        });
+        throw new ApiError(
+          providerFailure.status === 429 ? 429 : 503,
+          providerFailure.userMessage
+        );
+      }
       await prisma.imageGenerationJob.updateMany({
         where: {
           id: job.id,
@@ -494,8 +533,8 @@ export async function createPersistentImageGenerationJob(
         },
         data: {
           status: 'failed',
-          error: '이미지 생성 제공자에 작업을 요청하지 못했습니다.',
-          lastFinalizationError: 'provider_create_failed',
+          error: providerFailure.userMessage,
+          lastFinalizationError: `provider_create_${providerFailure.code}`,
           finalizationLeaseToken: null,
           finalizationLeaseUntil: null,
         },

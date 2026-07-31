@@ -58,6 +58,7 @@ export interface AnalyzeChapterRequest {
   maxCount: number;
   autoDetect: boolean;
   useAI?: boolean; // Use Gemini AI for scene analysis (optional, default: false)
+  adultConfirmed?: boolean; // Explicit confirmation required before sending content to Gemini
   characters?: IllustrationCharacter[]; // Characters for AI analysis
 }
 
@@ -65,6 +66,10 @@ export interface AnalyzeChapterRequest {
 export interface AnalyzeChapterResponse {
   positions: IllustrationPosition[];
   totalParagraphs: number;
+  usedAI: boolean;
+  analysisMode: 'gemini' | 'rules';
+  fallbackUsed: boolean;
+  notice: string;
 }
 
 // Character info for illustration generation

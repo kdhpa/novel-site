@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 
 export const DELETED_COMMENT_CONTENT = '[삭제된 댓글입니다.]';
 
@@ -16,6 +17,7 @@ export const commentCreateSchema = z
   .object({
     content: commentContentSchema,
     parentId: z.string().trim().min(1).max(100).optional(),
+    clientRequestId: z.string().trim().min(16).max(100).optional(),
   })
   .strict();
 
@@ -24,6 +26,15 @@ export const commentPatchSchema = z
     content: commentContentSchema,
   })
   .strict();
+
+export function buildIdempotentCommentId(userId: string, clientRequestId: string) {
+  const digest = createHash('sha256')
+    .update(userId)
+    .update('\0')
+    .update(clientRequestId)
+    .digest('hex');
+  return `comment_${digest}`;
+}
 
 type ReplyParent = {
   novelId: string;

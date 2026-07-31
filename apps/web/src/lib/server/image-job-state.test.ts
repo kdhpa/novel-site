@@ -13,6 +13,7 @@ describe('image job state', () => {
   it('제공자 상태를 공개 상태로 정규화한다', () => {
     expect(normalizeImageJobStatus('successful')).toBe('succeeded');
     expect(normalizeImageJobStatus('cancelled')).toBe('canceled');
+    expect(normalizeImageJobStatus('aborted')).toBe('canceled');
     expect(normalizeImageJobStatus('unknown')).toBe('processing');
   });
 

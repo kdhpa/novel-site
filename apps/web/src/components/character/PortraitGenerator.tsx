@@ -92,6 +92,7 @@ export default function PortraitGenerator({
       const job = record.job || await startImageJob(record.input, {
         clientRequestId: record.clientRequestId,
         signal: controller.signal,
+        maxAttempts: 4,
       });
       if (generationAbortRef.current !== controller) return;
 

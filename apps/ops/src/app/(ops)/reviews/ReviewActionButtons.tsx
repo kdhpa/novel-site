@@ -38,6 +38,7 @@ export default function ReviewActionButtons({ novelId, title }: { novelId: strin
         return;
       }
 
+      router.replace('/reviews');
       router.refresh();
     } catch {
       window.alert('심사 처리 중 네트워크 오류가 발생했습니다.');

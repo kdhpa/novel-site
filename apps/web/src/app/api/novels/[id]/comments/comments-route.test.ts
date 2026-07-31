@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   novelFindFirst: vi.fn(),
   commentFindMany: vi.fn(),
   commentCount: vi.fn(),
+  commentFindUnique: vi.fn(),
   commentFindFirst: vi.fn(),
   commentCreate: vi.fn(),
   commentUpdate: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('@/lib/prisma', () => ({
     comment: {
       findMany: mocks.commentFindMany,
       count: mocks.commentCount,
+      findUnique: mocks.commentFindUnique,
       findFirst: mocks.commentFindFirst,
       create: mocks.commentCreate,
       update: mocks.commentUpdate,
@@ -47,7 +49,7 @@ vi.mock('@/lib/prisma', () => ({
 
 import { GET, POST } from './route';
 import { DELETE, PATCH } from './[commentId]/route';
-import { DELETED_COMMENT_CONTENT } from '@/lib/server/comments';
+import { buildIdempotentCommentId, DELETED_COMMENT_CONTENT } from '@/lib/server/comments';
 
 function jsonRequest(url: string, method: string, body: object) {
   return new NextRequest(url, {
@@ -65,6 +67,7 @@ beforeEach(() => {
   mocks.assertCommentMutationRateLimit.mockResolvedValue(undefined);
   mocks.commentFindMany.mockResolvedValue([]);
   mocks.commentCount.mockResolvedValue(0);
+  mocks.commentFindUnique.mockResolvedValue(null);
 });
 
 describe('comments GET', () => {
@@ -91,6 +94,118 @@ describe('comments GET', () => {
 });
 
 describe('comments POST', () => {
+  it('같은 사용자·요청 ID의 재전송은 기존 댓글을 반환하고 다시 생성하지 않는다', async () => {
+    const clientRequestId = '0198a574-bb7a-7e1a-a8a8-77983a281f05';
+    mocks.commentFindUnique.mockResolvedValue({
+      id: buildIdempotentCommentId('user-a', clientRequestId),
+      novelId: 'novel-a',
+      userId: 'user-a',
+      content: '좋은 작품이에요.',
+      parentId: null,
+      createdAt: new Date('2026-07-19T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-19T00:00:00.000Z'),
+      user: { id: 'user-a', nickname: '독자', image: null },
+    });
+
+    const response = await POST(
+      jsonRequest(
+        'https://novelverse.test/api/novels/novel-a/comments',
+        'POST',
+        { content: '좋은 작품이에요.', clientRequestId },
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.assertCommentMutationRateLimit).not.toHaveBeenCalled();
+    expect(mocks.commentCreate).not.toHaveBeenCalled();
+  });
+
+  it('요청 ID를 다른 댓글 입력에 재사용하면 409로 거부한다', async () => {
+    const clientRequestId = '0198a574-bb7a-7e1a-a8a8-77983a281f05';
+    mocks.commentFindUnique.mockResolvedValue({
+      id: buildIdempotentCommentId('user-a', clientRequestId),
+      novelId: 'novel-a',
+      userId: 'user-a',
+      content: '원래 댓글',
+      parentId: null,
+      createdAt: new Date('2026-07-19T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-19T00:00:00.000Z'),
+      user: { id: 'user-a', nickname: '독자', image: null },
+    });
+
+    const response = await POST(
+      jsonRequest(
+        'https://novelverse.test/api/novels/novel-a/comments',
+        'POST',
+        { content: '다른 댓글', clientRequestId },
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(mocks.commentCreate).not.toHaveBeenCalled();
+  });
+
+  it('새 요청 ID는 결정적 댓글 ID로 한 번 생성한다', async () => {
+    const clientRequestId = '0198a574-bb7a-7e1a-a8a8-77983a281f05';
+    const id = buildIdempotentCommentId('user-a', clientRequestId);
+    mocks.novelFindFirst.mockResolvedValue({ id: 'novel-a' });
+    mocks.commentCreate.mockResolvedValue({
+      id,
+      content: '새 댓글',
+      parentId: null,
+      createdAt: new Date('2026-07-19T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-19T00:00:00.000Z'),
+      user: { id: 'user-a', nickname: '독자', image: null },
+    });
+
+    const response = await POST(
+      jsonRequest(
+        'https://novelverse.test/api/novels/novel-a/comments',
+        'POST',
+        { content: '새 댓글', clientRequestId },
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.commentCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ id, content: '새 댓글' }),
+    }));
+  });
+
+  it('동시 생성 경합에서 P2002가 발생해도 먼저 생성된 같은 댓글을 회수한다', async () => {
+    const clientRequestId = '0198a574-bb7a-7e1a-a8a8-77983a281f05';
+    const existing = {
+      id: buildIdempotentCommentId('user-a', clientRequestId),
+      novelId: 'novel-a',
+      userId: 'user-a',
+      content: '동시 요청 댓글',
+      parentId: null,
+      createdAt: new Date('2026-07-19T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-19T00:00:00.000Z'),
+      user: { id: 'user-a', nickname: '독자', image: null },
+    };
+    mocks.commentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+    mocks.novelFindFirst.mockResolvedValue({ id: 'novel-a' });
+    mocks.commentCreate.mockRejectedValue({ code: 'P2002' });
+
+    const response = await POST(
+      jsonRequest(
+        'https://novelverse.test/api/novels/novel-a/comments',
+        'POST',
+        { content: '동시 요청 댓글', clientRequestId },
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.commentFindUnique).toHaveBeenCalledTimes(2);
+  });
+
   it('다른 작품이나 중첩 댓글 ID를 답글 부모로 사용할 수 없다', async () => {
     mocks.novelFindFirst.mockResolvedValue({ id: 'novel-a' });
     mocks.commentFindFirst.mockResolvedValue({

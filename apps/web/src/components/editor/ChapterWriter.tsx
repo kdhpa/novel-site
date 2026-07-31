@@ -26,6 +26,7 @@ import {
   writeRecoverableImageJob,
   type RecoverableImageJob,
 } from '@/lib/client/image-jobs';
+import type { AnalyzeChapterResponse } from '@/types/illustration';
 import {
   ArrowLeft,
   Bold,
@@ -193,6 +194,10 @@ export default function ChapterWriter({
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isAnalyzingChapter, setIsAnalyzingChapter] = useState(false);
+  const [adultConfirmedForAnalysis, setAdultConfirmedForAnalysis] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeChapterResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState('');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<DraftData | null>(null);
@@ -507,6 +512,7 @@ export default function ChapterWriter({
       const job = record.job || await startImageJob(record.input, {
         clientRequestId: record.clientRequestId,
         signal: controller.signal,
+        maxAttempts: 4,
       });
       if (imageGenerationAbortRef.current !== controller) return;
       writeRecoverableImageJob(activeImageJobStorageKeyRef.current, ownerUserId, {
@@ -579,7 +585,7 @@ export default function ChapterWriter({
   }, [chapterImageJobStorageKey, ownerUserId, runImageGeneration]);
 
   const generateImage = async () => {
-    if (imageGenerationInFlightRef.current) return;
+    if (imageGenerationInFlightRef.current || imageUploadInFlightRef.current) return;
 
     if (!ownerUserId || !activeImageJobStorageKeyRef.current) {
       setError('로그인 정보를 확인한 뒤 다시 시도해 주세요.');
@@ -622,6 +628,8 @@ export default function ChapterWriter({
   };
 
   const suggestImagePrompt = () => {
+    setAnalysisResult(null);
+    setAnalysisError('');
     const scene = plainText.slice(0, 500);
     const characterHint = characters
       .slice(0, 4)
@@ -640,13 +648,76 @@ export default function ChapterWriter({
     );
   };
 
+  const analyzeChapterWithGemini = async () => {
+    if (isAnalyzingChapter) return;
+
+    if (!adultConfirmedForAnalysis) {
+      setAnalysisResult(null);
+      setAnalysisError('Gemini 분석을 사용하려면 만 18세 이상임을 먼저 확인해 주세요.');
+      return;
+    }
+
+    const latestContent = editor?.getHTML() || content;
+    if (!stripHtml(latestContent)) {
+      setAnalysisResult(null);
+      setAnalysisError('분석할 본문을 먼저 작성해 주세요.');
+      return;
+    }
+
+    setIsAnalyzingChapter(true);
+    setAnalysisResult(null);
+    setAnalysisError('');
+
+    try {
+      const response = await fetch('/api/ai/analyze-chapter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: latestContent,
+          novelId,
+          maxCount: 3,
+          autoDetect: true,
+          useAI: true,
+          adultConfirmed: true,
+          characters: characters
+            .filter((character) => character.appearance.trim())
+            .slice(0, 20)
+            .map(({ id, name, appearance }) => ({ id, name, appearance })),
+        }),
+      });
+      const payload = await readJson<AnalyzeChapterResponse>(response);
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error || '장면 분석에 실패했습니다.');
+      }
+
+      const bestPosition = [...payload.data.positions]
+        .sort((left, right) => right.confidence - left.confidence)[0];
+      const suggestedPrompt = bestPosition?.optimizedPrompt || bestPosition?.suggestedPrompt;
+
+      if (suggestedPrompt) {
+        setImagePrompt(suggestedPrompt);
+      }
+      setAnalysisResult(payload.data);
+    } catch (err) {
+      setAnalysisResult(null);
+      setAnalysisError(
+        err instanceof Error
+          ? err.message
+          : 'Gemini 장면 분석을 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.'
+      );
+    } finally {
+      setIsAnalyzingChapter(false);
+    }
+  };
+
   const insertImageIntoBody = () => {
     if (!aiImage || !editor) return;
     editor.chain().focus().setImage({ src: aiImage, alt: `${title || '회차'} 삽화` }).run();
   };
 
   const uploadIllustration = async (file: File) => {
-    if (imageUploadInFlightRef.current) return;
+    if (imageUploadInFlightRef.current || imageGenerationInFlightRef.current) return;
 
     if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
       setError('JPEG, PNG, GIF, WEBP 이미지 파일만 업로드할 수 있습니다.');
@@ -690,7 +761,7 @@ export default function ChapterWriter({
   return (
     <div
       className="min-h-screen pb-28 sm:pb-0"
-      aria-busy={isSaving || isGeneratingImage || isUploadingImage}
+      aria-busy={isSaving || isGeneratingImage || isUploadingImage || isAnalyzingChapter}
     >
       <span className="sr-only" role="status" aria-live="polite">
         {isSaving
@@ -699,7 +770,9 @@ export default function ChapterWriter({
             ? '삽화를 생성하고 있습니다.'
             : isUploadingImage
               ? '삽화를 업로드하고 있습니다.'
-              : ''}
+              : isAnalyzingChapter
+                ? 'Gemini가 본문의 장면을 분석하고 있습니다.'
+                : ''}
       </span>
       <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-3 py-3 backdrop-blur sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -909,9 +982,29 @@ export default function ChapterWriter({
             >
               <span className="font-semibold text-accent">외부 AI 전송 안내</span>
               <span className="mt-1 block">
-                생성을 누르면 이 프롬프트와 본문에서 채운 장면·캐릭터 정보가 Replicate로 전송됩니다. 민감정보나 타인의 개인정보를 입력하지 마세요.
+                장면 분석을 누르면 본문과 등장인물 정보가 Google Gemini로 전송됩니다.
+                이미지 생성을 누르면 위 프롬프트가 Replicate로 전송됩니다. 민감정보나
+                타인의 개인정보를 입력하지 마세요.
               </span>
             </aside>
+            <label
+              htmlFor="chapter-ai-adult-confirm"
+              className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs leading-5 text-zinc-300"
+            >
+              <input
+                id="chapter-ai-adult-confirm"
+                type="checkbox"
+                checked={adultConfirmedForAnalysis}
+                onChange={(event) => {
+                  setAdultConfirmedForAnalysis(event.target.checked);
+                  setAnalysisError('');
+                }}
+                className="mt-1 h-4 w-4 shrink-0 accent-primary"
+              />
+              <span>
+                만 18세 이상이며, 본문·등장인물 정보가 Gemini로 전송되는 것을 확인했습니다.
+              </span>
+            </label>
             <div className="mt-2 flex flex-wrap gap-2">
               <input
                 ref={imageFileInputRef}
@@ -940,12 +1033,27 @@ export default function ChapterWriter({
                 className="inline-flex min-h-10 items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-accent-muted hover:bg-background-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <Wand2 className="h-3.5 w-3.5" />
-                본문으로 채우기
+                본문으로 채우기 (AI 미사용)
+              </button>
+              <button
+                type="button"
+                onClick={() => void analyzeChapterWithGemini()}
+                disabled={
+                  !adultConfirmedForAnalysis ||
+                  !plainText ||
+                  isAnalyzingChapter ||
+                  isGeneratingImage
+                }
+                aria-busy={isAnalyzingChapter}
+                className="inline-flex min-h-10 items-center gap-1 rounded-md border border-accent-muted px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-muted/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {isAnalyzingChapter ? 'Gemini 분석 중' : 'Gemini로 장면 분석'}
               </button>
               <button
                 type="button"
                 onClick={() => void generateImage()}
-                disabled={isGeneratingImage}
+                disabled={isGeneratingImage || isAnalyzingChapter}
                 aria-busy={isGeneratingImage}
                 className="inline-flex min-h-10 items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -962,6 +1070,39 @@ export default function ChapterWriter({
                 </button>
               )}
             </div>
+
+            {analysisError && (
+              <p
+                role="alert"
+                className="mt-3 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-200"
+              >
+                {analysisError}
+              </p>
+            )}
+
+            {analysisResult && (
+              <div
+                role="status"
+                aria-live="polite"
+                className={`mt-3 rounded-md border px-3 py-2 text-xs leading-5 ${
+                  analysisResult.fallbackUsed
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                }`}
+              >
+                <span className="block font-semibold">
+                  {analysisResult.usedAI
+                    ? 'Gemini AI 사용됨'
+                    : analysisResult.fallbackUsed
+                      ? 'Gemini 실패 · 규칙 기반 대체'
+                      : 'AI 미사용 · 로컬 규칙 분석'}
+                </span>
+                <span className="mt-1 block">{analysisResult.notice}</span>
+                {analysisResult.positions.length === 0 && (
+                  <span className="mt-1 block">추천할 수 있는 삽화 장면을 찾지 못했습니다.</span>
+                )}
+              </div>
+            )}
 
             {aiImage && (
               <div className="mt-4 overflow-hidden rounded-md border border-border bg-background">

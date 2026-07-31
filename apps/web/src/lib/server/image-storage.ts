@@ -5,7 +5,7 @@ import { fetchVerifiedRemoteImage } from './remote-image';
 export type StoredImageResult = {
   url: string;
   stored: boolean;
-  storageProvider: 'supabase' | 'local' | 'none';
+  storageProvider: 'supabase' | 'supabase-s3' | 'local' | 'none';
   path?: string;
 };
 

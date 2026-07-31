@@ -4,6 +4,10 @@ type GeminiPolicyEnvironment = {
   GOOGLE_GEMINI_API_KEY?: string;
 };
 
+type ReplicatePolicyEnvironment = {
+  REPLICATE_API_TOKEN?: string;
+};
+
 type GeminiEnabledReader = () => Promise<boolean>;
 
 export async function getGeminiApiKey(
@@ -36,4 +40,15 @@ export function geminiPolicyHealth(
     return { status: 'down', detail: 'GOOGLE_GEMINI_API_KEY is not configured' };
   }
   return { status: 'up', detail: 'enabled' };
+}
+
+export function replicatePolicyHealth(
+  environment: ReplicatePolicyEnvironment = {
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
+  },
+): { status: 'up' | 'down'; detail: string } {
+  if (!environment.REPLICATE_API_TOKEN?.trim()) {
+    return { status: 'down', detail: 'REPLICATE_API_TOKEN is not configured' };
+  }
+  return { status: 'up', detail: 'configured' };
 }

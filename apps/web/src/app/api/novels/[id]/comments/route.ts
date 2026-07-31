@@ -5,6 +5,7 @@ import { ApiError, handleApiError, ok } from '@/lib/server/api';
 import { requireUser, isCurrentAdmin } from '@/lib/server/authz';
 import { assertCommentMutationRateLimit } from '@/lib/server/comment-rate-limit';
 import {
+  buildIdempotentCommentId,
   commentCreateSchema,
   isEligibleReplyParent,
   toPublicComment,
@@ -26,6 +27,62 @@ const publicUserSelect = {
   nickname: true,
   image: true,
 } as const;
+
+const commentResponseSelect = {
+  id: true,
+  content: true,
+  createdAt: true,
+  updatedAt: true,
+  parentId: true,
+  user: { select: publicUserSelect },
+} as const;
+
+const idempotentCommentSelect = {
+  ...commentResponseSelect,
+  novelId: true,
+  userId: true,
+} as const;
+
+type IdempotentComment = Awaited<ReturnType<typeof findIdempotentComment>>;
+
+function isUniqueConflict(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && (error as { code?: string }).code === 'P2002';
+}
+
+function findIdempotentComment(id: string) {
+  return prisma.comment.findUnique({
+    where: { id },
+    select: idempotentCommentSelect,
+  });
+}
+
+function matchesIdempotentRequest(
+  comment: NonNullable<IdempotentComment>,
+  input: {
+    novelId: string;
+    userId: string;
+    content: string;
+    parentId?: string;
+  },
+) {
+  return comment.novelId === input.novelId
+    && comment.userId === input.userId
+    && comment.content === input.content
+    && comment.parentId === (input.parentId ?? null);
+}
+
+function toIdempotentCommentResponse(comment: NonNullable<IdempotentComment>) {
+  return toPublicComment({
+    id: comment.id,
+    content: comment.content,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+    parentId: comment.parentId,
+    user: comment.user,
+  });
+}
 
 function parsePositiveInteger(value: string | null, fallback: number, max?: number) {
   const parsed = Number(value);
@@ -183,10 +240,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await requireUser();
     const { id } = await params;
-    await assertCommentMutationRateLimit(user.id);
     const body = commentCreateSchema.parse(
       await readJsonBodyWithLimit<unknown>(request, JSON_BODY_LIMIT),
     );
+    const idempotentId = body.clientRequestId
+      ? buildIdempotentCommentId(user.id, body.clientRequestId)
+      : null;
+    const idempotentInput = {
+      novelId: id,
+      userId: user.id,
+      content: body.content,
+      parentId: body.parentId,
+    };
+
+    if (idempotentId) {
+      const existing = await findIdempotentComment(idempotentId);
+      if (existing) {
+        if (!matchesIdempotentRequest(existing, idempotentInput)) {
+          throw new ApiError(409, '같은 요청 ID를 다른 댓글에 다시 사용할 수 없습니다.');
+        }
+        return ok(toIdempotentCommentResponse(existing));
+      }
+    }
+
+    await assertCommentMutationRateLimit(user.id);
 
     const novel = await prisma.novel.findFirst({
       where: {
@@ -212,22 +289,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const comment = await prisma.comment.create({
-      data: {
-        novelId: id,
-        userId: user.id,
-        content: body.content,
-        parentId: body.parentId,
-      },
-      select: {
-        id: true,
-        content: true,
-        createdAt: true,
-        updatedAt: true,
-        parentId: true,
-        user: { select: publicUserSelect },
-      },
-    });
+    let comment;
+    try {
+      comment = await prisma.comment.create({
+        data: {
+          ...(idempotentId ? { id: idempotentId } : {}),
+          novelId: id,
+          userId: user.id,
+          content: body.content,
+          parentId: body.parentId,
+        },
+        select: commentResponseSelect,
+      });
+    } catch (error) {
+      if (!idempotentId || !isUniqueConflict(error)) throw error;
+      const existing = await findIdempotentComment(idempotentId);
+      if (!existing || !matchesIdempotentRequest(existing, idempotentInput)) {
+        throw new ApiError(409, '같은 요청 ID를 다른 댓글에 다시 사용할 수 없습니다.');
+      }
+      return ok(toIdempotentCommentResponse(existing));
+    }
 
     return ok(toPublicComment(comment), { status: 201 });
   } catch (error) {

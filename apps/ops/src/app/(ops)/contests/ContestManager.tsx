@@ -250,6 +250,7 @@ export default function ContestManager({
   const bannerRequestGenerationRef = useRef(0);
   const bannerRequestAbortRef = useRef<AbortController | null>(null);
   const bannerAiPendingStartRef = useRef<BannerAiPendingStart | null>(null);
+  const submissionInFlightRef = useRef(false);
 
   const editingContest = contests.find((contest) => contest.id === editingId);
   const bannerPreviewSource = getBannerPreviewSource(form.coverImage);
@@ -361,7 +362,7 @@ export default function ContestManager({
   async function uploadBanner(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file || isFormBusy) return;
+    if (!file || bannerRequestAbortRef.current || isFormBusy) return;
 
     setBannerError('');
     setBannerMessage('');
@@ -520,7 +521,7 @@ export default function ContestManager({
   }
 
   async function generateBannerWithAi() {
-    if (isFormBusy) return;
+    if (bannerRequestAbortRef.current || isFormBusy) return;
 
     const prompt = bannerAiPrompt.trim();
     if (!prompt) {
@@ -583,7 +584,8 @@ export default function ContestManager({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (isFormBusy) return;
+    if (submissionInFlightRef.current || bannerRequestAbortRef.current || isFormBusy) return;
+    submissionInFlightRef.current = true;
     setIsLoading(true);
 
     try {
@@ -608,6 +610,7 @@ export default function ContestManager({
     } catch {
       window.alert('공모전 저장 중 네트워크 오류가 발생했습니다.');
     } finally {
+      submissionInFlightRef.current = false;
       setIsLoading(false);
     }
   }
