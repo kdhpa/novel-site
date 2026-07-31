@@ -11,7 +11,6 @@ import {
   geminiPolicyHealth,
   replicatePolicyHealth,
 } from '@/lib/server/ai-provider-policy';
-import { isAuthEmailConfigured } from '@/lib/server/auth-email';
 import { isGeminiAiEnabled } from '@novelverse/db';
 
 export const dynamic = 'force-dynamic';
@@ -69,16 +68,33 @@ function retentionPolicyCheck(): HealthCheck {
   return { status: 'up', detail: `${backupDays} day backup retention declared` };
 }
 
-function authEmailCheck(): HealthCheck {
+function googleAuthCheck(): HealthCheck {
   if (process.env.NODE_ENV !== 'production') {
-    return { status: 'up', detail: 'development delivery fallback' };
+    return { status: 'up', detail: 'development configuration' };
   }
-  return isAuthEmailConfigured()
-    ? { status: 'up', detail: 'transactional email configured' }
+
+  return process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim()
+    ? { status: 'up', detail: 'Google OAuth configured' }
     : {
         status: 'down',
-        detail: 'RESEND_API_KEY and EMAIL_FROM are required for account privacy step-up',
+        detail: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for sign-up',
       };
+}
+
+function authEmailCheck(): HealthCheck {
+  const hasApiKey = Boolean(process.env.RESEND_API_KEY?.trim());
+  const hasSender = Boolean(process.env.EMAIL_FROM?.trim());
+
+  if (!hasApiKey && !hasSender) {
+    return { status: 'up', detail: 'optional transactional email disabled' };
+  }
+  if (hasApiKey && hasSender) {
+    return { status: 'up', detail: 'optional transactional email configured' };
+  }
+  return {
+    status: 'down',
+    detail: 'RESEND_API_KEY and EMAIL_FROM must be configured together or both omitted',
+  };
 }
 
 function privacyContactCheck(): HealthCheck {
@@ -133,6 +149,7 @@ export async function GET(request: NextRequest) {
     logServerError('health.ai-provider-setting', error, { requestId });
   }
   const retentionPolicy = retentionPolicyCheck();
+  const googleAuth = googleAuthCheck();
   const authEmail = authEmailCheck();
   const privacyContact = privacyContactCheck();
   const checks = {
@@ -142,6 +159,7 @@ export async function GET(request: NextRequest) {
     imageProvider,
     aiProviderPolicy,
     retentionPolicy,
+    googleAuth,
     authEmail,
     privacyContact,
   };

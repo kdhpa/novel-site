@@ -47,6 +47,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasGoogleProvider, setHasGoogleProvider] = useState(false);
+  const [providerCheckComplete, setProviderCheckComplete] = useState(false);
   const [credentialsEnabled, setCredentialsEnabled] = useState<boolean | null>(null);
   const submissionInFlightRef = useRef(false);
   const [formData, setFormData] = useState({
@@ -65,6 +66,9 @@ export default function RegisterPage() {
       })
       .catch(() => {
         if (mounted) setHasGoogleProvider(false);
+      })
+      .finally(() => {
+        if (mounted) setProviderCheckComplete(true);
       });
 
     fetch('/api/auth/register', { cache: 'no-store' })
@@ -161,62 +165,76 @@ export default function RegisterPage() {
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="이메일"
-          type="email"
-          value={formData.email}
-          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-          placeholder="이메일 주소를 입력하세요"
-          required
-        />
-
-        <Input
-          label="닉네임"
-          value={formData.nickname}
-          onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
-          placeholder="2~20자"
-          helperText="다른 사용자에게 표시되는 이름입니다."
-          required
-        />
-
-        <Input
-          label="비밀번호"
-          type="password"
-          value={formData.password}
-          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-          placeholder="8자 이상"
-          helperText="8자 이상 입력해주세요."
-          required
-        />
-
-        <Input
-          label="비밀번호 확인"
-          type="password"
-          value={formData.confirmPassword}
-          onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-          placeholder="비밀번호를 다시 입력"
-          required
-        />
-
-        <Button type="submit" isLoading={isLoading} disabled={credentialsEnabled !== true} fullWidth>
-          회원가입
-        </Button>
-        <p className="text-xs leading-5 text-zinc-500">
-          가입 후 이메일 인증을 완료해야 비밀번호로 로그인할 수 있습니다.
+      {providerCheckComplete && !hasGoogleProvider && credentialsEnabled === false && (
+        <p role="alert" className="mb-4 rounded-md border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300">
+          Google 가입 설정을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.
         </p>
-      </form>
+      )}
+
+      {credentialsEnabled === null && (
+        <div className="mb-4 h-12 animate-pulse rounded-md bg-zinc-800" aria-hidden="true" />
+      )}
+
+      {credentialsEnabled === true && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="이메일"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="이메일 주소를 입력하세요"
+            required
+          />
+
+          <Input
+            label="닉네임"
+            value={formData.nickname}
+            onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+            placeholder="2~20자"
+            helperText="다른 사용자에게 표시되는 이름입니다."
+            required
+          />
+
+          <Input
+            label="비밀번호"
+            type="password"
+            value={formData.password}
+            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+            placeholder="8자 이상"
+            helperText="8자 이상 입력해주세요."
+            required
+          />
+
+          <Input
+            label="비밀번호 확인"
+            type="password"
+            value={formData.confirmPassword}
+            onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+            placeholder="비밀번호를 다시 입력"
+            required
+          />
+
+          <Button type="submit" isLoading={isLoading} fullWidth>
+            회원가입
+          </Button>
+          <p className="text-xs leading-5 text-zinc-500">
+            가입 후 이메일 인증을 완료해야 비밀번호로 로그인할 수 있습니다.
+          </p>
+        </form>
+      )}
 
       {hasGoogleProvider && (
         <>
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+          {credentialsEnabled === true && (
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500">또는</span>
+              </div>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white dark:bg-gray-800 text-gray-500">또는</span>
-            </div>
-          </div>
+          )}
 
           <Button
             type="button"
@@ -242,7 +260,7 @@ export default function RegisterPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Google로 가입
+            Google로 시작하기
           </Button>
         </>
       )}

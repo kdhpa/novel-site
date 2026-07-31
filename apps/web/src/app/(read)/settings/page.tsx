@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { isAuthEmailDeliveryEnabled } from '@/lib/server/auth-email';
 import AccountSettings from './AccountSettings';
 
 export const metadata: Metadata = {
@@ -51,6 +52,7 @@ export default async function SettingsPage({
     <AccountSettings
       email={user.email}
       hasPassword={Boolean(user.password)}
+      emailDeliveryEnabled={isAuthEmailDeliveryEnabled()}
       initialDeletionToken={initialDeletionToken}
       initialExportToken={initialExportToken}
     />

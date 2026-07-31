@@ -62,6 +62,7 @@ function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasGoogleProvider, setHasGoogleProvider] = useState(false);
+  const [emailRecoveryEnabled, setEmailRecoveryEnabled] = useState(false);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const submissionInFlightRef = useRef(false);
 
@@ -75,6 +76,15 @@ function LoginForm() {
       })
       .catch(() => {
         if (mounted) setHasGoogleProvider(false);
+      });
+
+    fetch('/api/auth/register', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (mounted) setEmailRecoveryEnabled(payload.data?.enabled === true);
+      })
+      .catch(() => {
+        if (mounted) setEmailRecoveryEnabled(false);
       });
 
     return () => {
@@ -157,14 +167,16 @@ function LoginForm() {
         </Button>
       </form>
 
-      <div className="mt-3 flex justify-between text-sm">
-        <Link href="/verify-email" className="text-zinc-500 hover:text-zinc-300 hover:underline">
-          인증 메일 재전송
-        </Link>
-        <Link href="/forgot-password" className="text-indigo-600 dark:text-indigo-400 hover:underline">
-          비밀번호를 잊으셨나요?
-        </Link>
-      </div>
+      {emailRecoveryEnabled && (
+        <div className="mt-3 flex justify-between text-sm">
+          <Link href="/verify-email" className="text-zinc-500 hover:text-zinc-300 hover:underline">
+            인증 메일 재전송
+          </Link>
+          <Link href="/forgot-password" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+            비밀번호를 잊으셨나요?
+          </Link>
+        </div>
+      )}
 
       {hasGoogleProvider && (
         <>

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { signOut } from 'next-auth/react';
+import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { normalizeIdentityEmail } from '@novelverse/shared';
@@ -9,11 +10,13 @@ import { normalizeIdentityEmail } from '@novelverse/shared';
 export default function AccountSettings({
   email,
   hasPassword,
+  emailDeliveryEnabled,
   initialDeletionToken = '',
   initialExportToken = '',
 }: {
   email: string;
   hasPassword: boolean;
+  emailDeliveryEnabled: boolean;
   initialDeletionToken?: string;
   initialExportToken?: string;
 }) {
@@ -158,18 +161,29 @@ export default function AccountSettings({
         <p className="mt-2 text-sm leading-6 text-zinc-400">
           프로필, 작성 작품과 회차, 서재·좋아요·댓글·리뷰, AI 작업 기록을 JSON 파일로 받습니다.
         </p>
+        {!emailDeliveryEnabled && !exportToken ? (
+          <p className="mt-5 rounded-md border border-amber-800 bg-amber-950/40 p-4 text-sm leading-6 text-amber-200">
+            자동 확인 메일은 사용하지 않습니다. 데이터 사본이 필요하면{' '}
+            <Link href="/privacy" className="font-semibold underline hover:text-white">
+              개인정보 문의 채널
+            </Link>
+            로 요청해 주세요.
+          </p>
+        ) : (
         <div className="mt-5 space-y-4">
           {exportError && <p role="alert" className="rounded-md border border-rose-800 bg-rose-950/60 p-3 text-sm text-rose-300">{exportError}</p>}
           {exportMessage && <p role="status" className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300">{exportMessage}</p>}
-          <Button
-            type="button"
-            variant="outline"
-            isLoading={exportRequestPending}
-            disabled={exportPending}
-            onClick={requestExportConfirmation}
-          >
-            내보내기 확인 메일 받기
-          </Button>
+          {emailDeliveryEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={exportRequestPending}
+              disabled={exportPending}
+              onClick={requestExportConfirmation}
+            >
+              내보내기 확인 메일 받기
+            </Button>
+          )}
           <Input
             label="이메일로 받은 내보내기 확인 토큰"
             type="text"
@@ -201,6 +215,7 @@ export default function AccountSettings({
             데이터 다운로드
           </Button>
         </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-rose-900/70 bg-rose-950/20 p-6">
@@ -209,18 +224,29 @@ export default function AccountSettings({
           계정과 연결된 작품·회차·댓글·리뷰·서재 데이터는 삭제되며 되돌릴 수 없습니다.
           신고 당시의 제한된 원문과 보안 감사 기록은 계정 연결 식별자를 제거하고 관리자 제한 접근 상태로 처리방침 기간 동안 보존될 수 있습니다.
         </p>
+        {!emailDeliveryEnabled && !deletionToken ? (
+          <p className="mt-5 rounded-md border border-amber-800 bg-amber-950/40 p-4 text-sm leading-6 text-amber-200">
+            자동 확인 메일은 사용하지 않습니다. 계정 삭제가 필요하면{' '}
+            <Link href="/privacy" className="font-semibold underline hover:text-white">
+              개인정보 문의 채널
+            </Link>
+            로 요청해 주세요.
+          </p>
+        ) : (
         <form onSubmit={deleteAccount} className="mt-5 space-y-4">
           {error && <p role="alert" className="rounded-md border border-rose-800 bg-rose-950/60 p-3 text-sm text-rose-300">{error}</p>}
           {requestMessage && <p role="status" className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300">{requestMessage}</p>}
-          <Button
-            type="button"
-            variant="outline"
-            isLoading={requestPending}
-            disabled={pending}
-            onClick={requestDeletionConfirmation}
-          >
-            계정 삭제 확인 메일 받기
-          </Button>
+          {emailDeliveryEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={requestPending}
+              disabled={pending}
+              onClick={requestDeletionConfirmation}
+            >
+              계정 삭제 확인 메일 받기
+            </Button>
+          )}
           <Input
             label="이메일로 받은 삭제 확인 토큰"
             type="text"
@@ -264,6 +290,7 @@ export default function AccountSettings({
             계정과 데이터 영구 삭제
           </Button>
         </form>
+        )}
       </section>
     </div>
   );

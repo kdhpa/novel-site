@@ -114,8 +114,6 @@ GitHub 저장소의 **Settings → Environments → production**에는 운영 �
 | `SUPABASE_SERVICE_ROLE_KEY` | 서버 업로드 전용 service-role key |
 | `REQUIRE_PERSISTENT_STORAGE` | `true` |
 | `ALLOW_EPHEMERAL_STORAGE` | `false` |
-| `RESEND_API_KEY` | 개인정보 보호 단계 인증 메일 발송 키 |
-| `EMAIL_FROM` | 실제 발신 가능한 주소 |
 | `BACKUP_RETENTION_DAYS` | DB 공급자에서 실제 적용한 백업 보존 일수 |
 | `NEXT_PUBLIC_PRIVACY_CONTACT` | 모니터링되는 이메일 또는 HTTPS 요청 페이지 |
 | `CRON_SECRET` | 32자 이상의 무작위 유지보수 Bearer secret |
@@ -125,6 +123,20 @@ GitHub 저장소의 **Settings → Environments → production**에는 운영 �
 `NEXT_PUBLIC_IMAGE_HOSTS`, `REMOTE_IMAGE_ALLOWED_HOSTS`, 보존 기간, 사용자별 생성 한도는 `.env.example` 기준으로 운영 정책에 맞게 추가합니다. `NEXT_PUBLIC_*` 값은 빌드 결과에 포함되므로 변경 후 Web을 다시 배포합니다.
 
 Replicate나 Gemini 기능을 운영에서 사용할 때만 해당 API key와 모델 설정을 추가합니다. Gemini API 키는 Vercel 서버 환경 변수에만 보관하고, 런타임 활성화 여부는 Ops의 **AI 설정**에서 관리합니다.
+
+### 선택적 이메일 발송
+
+| 이름 | 설명 |
+| --- | --- |
+| `RESEND_API_KEY` | 이메일/비밀번호 가입과 계정 보안 메일을 사용할 때만 등록하는 발송 키 |
+| `EMAIL_FROM` | 위 기능을 사용할 때 등록하는 검증된 발신자 주소 |
+| `AUTH_EMAIL_TIMEOUT_MS` | 선택적 발송 요청 제한 시간(기본 10초) |
+
+`RESEND_API_KEY`와 `EMAIL_FROM`은 반드시 함께 설정합니다. 둘 다 비워 두면 신규 가입은
+Google을 사용하며, 비밀번호 재설정과 셀프서비스 계정 삭제·데이터 내보내기 확인 메일은
+비활성화됩니다. 해당 개인정보 권리 요청은 `NEXT_PUBLIC_PRIVACY_CONTACT`와
+[개인정보 권리 요청 운영 절차](./privacy-rights-runbook.md)로 처리합니다. 이메일 미설정은
+Web health 실패 사유가 아니지만, 두 값 중 하나만 등록한 불완전 구성은 실패 사유입니다.
 
 ## DB 연결과 마이그레이션
 
@@ -179,9 +191,9 @@ Vercel은 Web 프로젝트의 `CRON_SECRET`을 `Authorization: Bearer <value>` �
 curl --fail --show-error --silent "https://<web-domain>/api/health"
 ```
 
-Web health는 DB, 영구 저장소, 프록시 신뢰, AI 공급자 정책, 백업 보존 기간, 메일과 개인정보 문의 채널이 모두 유효해야 200을 반환합니다. 응답의 `release`는 Vercel이 제공하는 Git commit SHA를 표시합니다.
+Web health는 DB, 영구 저장소, 프록시 신뢰, AI 공급자 정책, 백업 보존 기간, Google OAuth, 선택적 이메일 구성의 일관성과 개인정보 문의 채널이 모두 유효해야 200을 반환합니다. 응답의 `release`는 Vercel이 제공하는 Git commit SHA를 표시합니다.
 
-마지막으로 Web Google 로그인, 회원가입, 4MiB 이하 표지 업로드, AI 이미지 작업 생성·폴링·영구 저장, 작품 작성·심사·공개 읽기와 주요 변경 API를 직접 smoke test합니다. Ops localhost는 이 운영 smoke test에 포함하지 않습니다.
+마지막으로 Web Google 로그인·가입, 4MiB 이하 표지 업로드, AI 이미지 작업 생성·폴링·영구 저장, 작품 작성·심사·공개 읽기와 주요 변경 API를 직접 smoke test합니다. 이메일 발송을 설정한 경우에만 이메일/비밀번호 가입과 계정 보안 메일도 확인합니다. Ops localhost는 이 운영 smoke test에 포함하지 않습니다.
 
 ## Web 롤백
 
