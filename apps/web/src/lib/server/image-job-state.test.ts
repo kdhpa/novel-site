@@ -130,4 +130,22 @@ describe('image job state', () => {
       retryAfterMs: null,
     });
   });
+
+  it('server maintenance recovery can claim a provider-complete job after token expiry', () => {
+    const now = new Date('2026-07-17T10:00:00.000Z');
+    const where = finalizationLeaseClaimWhere('job-1', 'user-1', now, {
+      ignoreRetrySchedule: true,
+      ignoreTokenExpiry: true,
+    });
+
+    expect(where).not.toHaveProperty('tokenExpiresAt');
+    expect(where.AND).toEqual([
+      {
+        OR: [
+          { finalizationLeaseUntil: null },
+          { finalizationLeaseUntil: { lt: now } },
+        ],
+      },
+    ]);
+  });
 });

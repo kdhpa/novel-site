@@ -44,6 +44,12 @@ export type ImageProviderUpdateOptions = {
    * retries even when the longer browser-polling schedule is still pending.
    */
   allowEarlyFinalizationRetry?: boolean;
+  /**
+   * Maintenance-only recovery may finish a provider-complete job after its
+   * client capability token expires. Browser polling and webhooks must never
+   * enable this option.
+   */
+  allowExpiredJobRecovery?: boolean;
 };
 
 export type ImageJobFinalizationResult = {
@@ -86,6 +92,22 @@ function result(
 
 async function refreshedJob(job: ImageJobRecord) {
   return (await getJob(job.id)) || job;
+}
+
+function resultFromCurrentJob(job: ImageJobRecord) {
+  const status = job.imageUrl ? 'succeeded' : normalizeImageJobStatus(job.status);
+  const isPending = status === 'starting' || status === 'processing';
+  const retryAfterMs = isPending
+    ? job.nextFinalizationAt
+      ? Math.max(job.nextFinalizationAt.getTime() - Date.now(), 0)
+      : 3_000
+    : null;
+  return result(job, {
+    status,
+    retryAfterMs,
+    exposeError: status === 'failed' || status === 'canceled',
+    retryWebhook: isPending && !job.imageUrl,
+  });
 }
 
 async function assertTransactionNovelAccess(
@@ -219,7 +241,7 @@ async function releaseFinalizationLease(
   nextFinalizationAt: Date | null,
   internalError: string,
 ) {
-  await prisma.imageGenerationJob.updateMany({
+  return prisma.imageGenerationJob.updateMany({
     where: finalizationLeaseCommitWhere(job.id, job.userId, leaseToken),
     data: {
       status,
@@ -346,6 +368,7 @@ async function finalizeProviderOutput(
   const claim = await prisma.imageGenerationJob.updateMany({
     where: finalizationLeaseClaimWhere(job.id, job.userId, leaseStartedAt, {
       ignoreRetrySchedule: options.allowEarlyFinalizationRetry,
+      ignoreTokenExpiry: options.allowExpiredJobRecovery,
     }),
     data: {
       status: 'processing',
@@ -359,21 +382,13 @@ async function finalizeProviderOutput(
   });
   if (claim.count !== 1) {
     job = await refreshedJob(job);
-    const scheduledRetryAfterMs = job.nextFinalizationAt
-      ? Math.max(job.nextFinalizationAt.getTime() - Date.now(), 0)
-      : null;
-    return result(job, {
-      status: job.imageUrl ? 'succeeded' : normalizeImageJobStatus(job.status),
-      retryAfterMs: job.imageUrl ? null : scheduledRetryAfterMs ?? 3_000,
-      exposeError: false,
-      retryWebhook: !job.imageUrl && job.status !== 'failed' && job.status !== 'canceled',
-    });
+    return resultFromCurrentJob(job);
   }
 
   job = await refreshedJob(job);
   const storageTarget = getImageJobStorageTarget(job);
   if (!storageTarget) {
-    await releaseFinalizationLease(
+    const released = await releaseFinalizationLease(
       job,
       leaseToken,
       'failed',
@@ -382,6 +397,7 @@ async function finalizeProviderOutput(
       'storage_target_invalid',
     );
     job = await refreshedJob(job);
+    if (released.count !== 1) return resultFromCurrentJob(job);
     return result(job, { status: 'failed', exposeError: true });
   }
 
@@ -409,7 +425,7 @@ async function finalizeProviderOutput(
     const nextAttempt = retryPolicy.retryAfterMs === null
       ? null
       : new Date(Date.now() + retryPolicy.retryAfterMs);
-    await releaseFinalizationLease(
+    const released = await releaseFinalizationLease(
       job,
       leaseToken,
       retryPolicy.exhausted ? 'failed' : 'processing',
@@ -420,6 +436,7 @@ async function finalizeProviderOutput(
       retryPolicy.exhausted ? 'max_finalization_attempts' : 'storage_retry_scheduled',
     );
     job = await refreshedJob(job);
+    if (released.count !== 1) return resultFromCurrentJob(job);
     return result(job, {
       status: retryPolicy.exhausted ? 'failed' : 'processing',
       retryAfterMs: retryPolicy.retryAfterMs,
@@ -433,16 +450,11 @@ async function finalizeProviderOutput(
   } catch (error) {
     if (error instanceof FinalizationLeaseLostError) {
       job = await refreshedJob(job);
-      return result(job, {
-        status: job.imageUrl ? 'succeeded' : 'processing',
-        retryAfterMs: job.imageUrl ? null : 3_000,
-        exposeError: false,
-        retryWebhook: !job.imageUrl,
-      });
+      return resultFromCurrentJob(job);
     }
 
     if (error instanceof FinalizationTargetUnavailableError) {
-      await releaseFinalizationLease(
+      const released = await releaseFinalizationLease(
         job,
         leaseToken,
         'failed',
@@ -450,13 +462,41 @@ async function finalizeProviderOutput(
         null,
         'target_unavailable',
       );
-      if (storageResult.path) {
+      if (released.count === 1 && storageResult.path) {
         await deleteFile(storageTarget.bucket, storageResult.path);
       }
       job = await refreshedJob(job);
+      if (released.count !== 1) return resultFromCurrentJob(job);
       return result(job, { status: 'failed', exposeError: true });
     }
-    throw error;
+
+    logServerError('image-job-finalization-commit', error, {
+      jobId: job.id,
+      userId: job.userId,
+      storageProvider: storageResult.storageProvider,
+    });
+    const retryPolicy = imageFinalizationRetryPolicy(job.finalizationAttempts);
+    const nextAttempt = retryPolicy.retryAfterMs === null
+      ? null
+      : new Date(Date.now() + retryPolicy.retryAfterMs);
+    const released = await releaseFinalizationLease(
+      job,
+      leaseToken,
+      retryPolicy.exhausted ? 'failed' : 'processing',
+      retryPolicy.exhausted
+        ? '생성 결과의 완료 상태를 저장하지 못했습니다.'
+        : '생성 결과 완료 처리를 잠시 후 다시 시도합니다.',
+      nextAttempt,
+      retryPolicy.exhausted ? 'max_finalization_attempts' : 'commit_retry_scheduled',
+    );
+    job = await refreshedJob(job);
+    if (released.count !== 1) return resultFromCurrentJob(job);
+    return result(job, {
+      status: retryPolicy.exhausted ? 'failed' : 'processing',
+      retryAfterMs: retryPolicy.retryAfterMs,
+      exposeError: retryPolicy.exhausted,
+      retryWebhook: !retryPolicy.exhausted,
+    });
   }
 
   job = await refreshedJob(job);

@@ -2,10 +2,12 @@ import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runImageJobMaintenance } from '@/lib/server/image-generation-jobs';
+import { recoverPendingImageJobs } from '@/lib/server/image-job-recovery';
 import { logServerError } from '@novelverse/shared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const MAX_BATCH_SIZE = 1_000;
 
@@ -158,13 +160,19 @@ async function handleMaintenance(request: NextRequest) {
 
   try {
     const now = new Date();
+    // Recover provider-complete jobs before the expiry sweep can terminally
+    // fail them. This path is authenticated and does not use client tokens.
+    const imageJobRecovery = await recoverPendingImageJobs(now);
     const [rows, imageJobs, reconciledLikeCounts] = await Promise.all([
       deleteExpiredRows(now),
       runImageJobMaintenance(now, { force: true }),
       reconcileNovelLikeCounts(),
     ]);
     return NextResponse.json(
-      { success: true, data: { ...rows, imageJobs, reconciledLikeCounts } },
+      {
+        success: true,
+        data: { ...rows, imageJobs, imageJobRecovery, reconciledLikeCounts },
+      },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {

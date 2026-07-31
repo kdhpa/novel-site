@@ -269,6 +269,97 @@ describe('shared image job finalization', () => {
     expect(currentJob.nextFinalizationAt).toBeInstanceOf(Date);
   });
 
+  it('releases the lease when the stored S3 result cannot commit to the database', async () => {
+    currentJob = makeJob({
+      novelId: null,
+      type: 'illustration',
+      metadata: { version: 1 },
+      targetBoundAt: null,
+    });
+    mocks.upload.mockResolvedValue({
+      url: 'https://storage.example/chapter-illustrations/job-1.webp',
+      stored: true,
+      storageProvider: 'supabase-s3',
+      path: 'user-user-1/jobs/job-1.webp',
+    });
+    mocks.transaction.mockRejectedValueOnce(new Error('database constraint rejected provider'));
+
+    const finalized = await processImageProviderUpdate(currentJob as never, {
+      predictionId: 'prediction-1',
+      status: 'succeeded',
+      imageUrl: 'https://replicate.delivery/output.webp',
+    });
+
+    expect(finalized).toMatchObject({
+      status: 'processing',
+      retryAfterMs: 15_000,
+      exposeError: false,
+      retryWebhook: true,
+    });
+    expect(currentJob).toMatchObject({
+      status: 'processing',
+      finalizationAttempts: 1,
+      finalizationLeaseToken: null,
+      lastFinalizationError: 'commit_retry_scheduled',
+    });
+    expect(currentJob.nextFinalizationAt).toEqual(
+      new Date(now.getTime() + 15_000),
+    );
+    expect(mocks.log).toHaveBeenCalledWith(
+      'image-job-finalization-commit',
+      expect.any(Error),
+      expect.objectContaining({ storageProvider: 'supabase-s3' }),
+    );
+  });
+
+  it('returns the current job when another worker wins after a commit error', async () => {
+    currentJob = makeJob({
+      novelId: null,
+      type: 'illustration',
+      metadata: { version: 1 },
+      targetBoundAt: null,
+    });
+    mocks.upload.mockResolvedValue({
+      url: 'https://storage.example/chapter-illustrations/job-1.webp',
+      stored: true,
+      storageProvider: 'supabase-s3',
+      path: 'user-user-1/jobs/job-1.webp',
+    });
+    mocks.transaction.mockRejectedValueOnce(new Error('temporary commit failure'));
+    mocks.updateJobs
+      .mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => {
+        applyJobData(data);
+        return { count: 1 };
+      })
+      .mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => {
+        applyJobData(data);
+        return { count: 1 };
+      })
+      .mockImplementationOnce(async () => {
+        Object.assign(currentJob, {
+          status: 'succeeded',
+          imageUrl: 'https://storage.example/chapter-illustrations/job-1.webp',
+          storageProvider: 'supabase-s3',
+          finalizationLeaseToken: null,
+          finalizationLeaseUntil: null,
+        });
+        return { count: 0 };
+      });
+
+    const finalized = await processImageProviderUpdate(currentJob as never, {
+      predictionId: 'prediction-1',
+      status: 'succeeded',
+      imageUrl: 'https://replicate.delivery/output.webp',
+    });
+
+    expect(finalized).toMatchObject({
+      status: 'succeeded',
+      retryAfterMs: null,
+      exposeError: false,
+      retryWebhook: false,
+    });
+  });
+
   it('rejects a prediction ID mismatch before any DB or storage mutation', async () => {
     await expect(processImageProviderUpdate(currentJob as never, {
       predictionId: 'different-prediction',

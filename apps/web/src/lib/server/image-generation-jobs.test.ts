@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   findJob: vi.fn(),
   updateJobs: vi.fn(),
   deleteJobs: vi.fn(),
+  findJobs: vi.fn(),
   globalBudget: vi.fn(),
   rateLimit: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: mocks.findJob,
       updateMany: mocks.updateJobs,
       deleteMany: mocks.deleteJobs,
+      findMany: mocks.findJobs,
     },
   },
 }));
@@ -39,7 +41,10 @@ vi.mock('./authz', () => ({
 vi.mock('./sanitize', () => ({ stripHtmlToText: vi.fn() }));
 
 import { verifyImageJobToken } from './image-job-token';
-import { createPersistentImageGenerationJob } from './image-generation-jobs';
+import {
+  createPersistentImageGenerationJob,
+  runImageJobMaintenance,
+} from './image-generation-jobs';
 
 const now = new Date('2026-07-17T10:00:00.000Z');
 const expiresAt = new Date('2026-07-17T12:00:00.000Z');
@@ -95,11 +100,24 @@ describe('persistent image generation job creation', () => {
     mocks.rateLimit.mockResolvedValue(undefined);
     mocks.updateJobs.mockResolvedValue({ count: 1 });
     mocks.deleteJobs.mockResolvedValue({ count: 0 });
+    mocks.findJobs.mockResolvedValue([]);
   });
 
   afterEach(() => {
     delete process.env.NEXTAUTH_SECRET;
     vi.useRealTimers();
+  });
+
+  it('preserves expired provider-complete jobs for server recovery', async () => {
+    await runImageJobMaintenance(now, { force: true });
+
+    expect(mocks.updateJobs).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        tokenExpiresAt: { lte: now },
+        providerImageUrl: null,
+      }),
+      data: expect.objectContaining({ lastFinalizationError: 'job_expired' }),
+    }));
   });
 
   it('로컬 DB 행을 먼저 만든 뒤 provider ID를 별도 필드에 저장한다', async () => {

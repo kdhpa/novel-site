@@ -125,7 +125,10 @@ export function finalizationLeaseClaimWhere(
   id: string,
   userId: string,
   now: Date,
-  options: { ignoreRetrySchedule?: boolean } = {}
+  options: {
+    ignoreRetrySchedule?: boolean;
+    ignoreTokenExpiry?: boolean;
+  } = {}
 ) {
   const retryScheduleCondition = options.ignoreRetrySchedule
     ? []
@@ -142,7 +145,7 @@ export function finalizationLeaseClaimWhere(
     id,
     userId,
     imageUrl: null,
-    tokenExpiresAt: { gt: now },
+    ...(options.ignoreTokenExpiry ? {} : { tokenExpiresAt: { gt: now } }),
     status: { in: ['starting', 'processing'] },
     finalizationAttempts: { lt: 5 },
     AND: [

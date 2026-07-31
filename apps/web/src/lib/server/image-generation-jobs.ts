@@ -111,6 +111,9 @@ export async function runImageJobMaintenance(now: Date, options: { force?: boole
       where: {
         tokenExpiresAt: { lte: now },
         status: { in: ['starting', 'processing'] },
+        // Provider-complete jobs are owned by the authenticated maintenance
+        // recovery path even after the client capability token expires.
+        providerImageUrl: null,
         OR: [
           { finalizationLeaseUntil: null },
           { finalizationLeaseUntil: { lte: now } },
