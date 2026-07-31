@@ -123,7 +123,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }),
         transaction.user.findUnique({
           where: { id: session.user.id },
-          select: { role: true },
+          select: { role: true, canSkipReview: true },
         }),
       ]);
       if (!novel) throw new ApiError(404, '작품을 찾을 수 없습니다.');
@@ -135,7 +135,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (!existingCharacter) throw new ApiError(404, '캐릭터를 찾을 수 없습니다.');
       const resetReview = shouldResetReviewAfterAuthorChange(novel, {
         id: session.user.id,
-        role: isAdmin ? 'ADMIN' : null,
+        role: currentUser?.role,
+        canSkipReview: currentUser?.canSkipReview === true,
       });
       const updated = await transaction.character.update({
         where: { id: characterId },
@@ -221,7 +222,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
         }),
         transaction.user.findUnique({
           where: { id: session.user.id },
-          select: { role: true },
+          select: { role: true, canSkipReview: true },
         }),
       ]);
       if (!novel) throw new ApiError(404, '작품을 찾을 수 없습니다.');
@@ -233,7 +234,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       if (!existingCharacter) throw new ApiError(404, '캐릭터를 찾을 수 없습니다.');
       const resetReview = shouldResetReviewAfterAuthorChange(novel, {
         id: session.user.id,
-        role: isAdmin ? 'ADMIN' : null,
+        role: currentUser?.role,
+        canSkipReview: currentUser?.canSkipReview === true,
       });
       await transaction.character.delete({ where: { id: characterId } });
       if (resetReview) {

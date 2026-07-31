@@ -124,7 +124,7 @@ describe('shared image job finalization', () => {
     mocks.findCharacter.mockResolvedValue({ id: 'character-1' });
     mocks.acquireAdminLock.mockResolvedValue(undefined);
     mocks.acquireNovelLock.mockResolvedValue(undefined);
-    mocks.txFindUser.mockResolvedValue({ role: 'AUTHOR' });
+    mocks.txFindUser.mockResolvedValue({ role: 'AUTHOR', canSkipReview: false });
     mocks.txFindNovel.mockResolvedValue({
       authorId: 'user-1',
       approvalStatus: 'APPROVED',
@@ -189,6 +189,10 @@ describe('shared image job finalization', () => {
       where: { id: 'novel-1' },
       data: { approvalStatus: 'DRAFT', isPublished: false },
     });
+    expect(mocks.shouldResetReview).toHaveBeenCalledWith(
+      expect.objectContaining({ authorId: 'user-1', approvalStatus: 'APPROVED' }),
+      { id: 'user-1', role: 'AUTHOR', canSkipReview: false },
+    );
     expect(currentJob).toMatchObject({
       status: 'succeeded',
       imageUrl: '/uploads/character-portraits/result.webp',

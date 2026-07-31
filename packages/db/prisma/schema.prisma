@@ -54,6 +54,7 @@ model User {
   bio              String?
   role             Role      @default(USER)
   isVerifiedAuthor Boolean   @default(false)
+  canSkipReview    Boolean   @default(false)
   verifiedAt       DateTime?
   suspendedAt      DateTime?
   suspensionReason String?   @db.Text

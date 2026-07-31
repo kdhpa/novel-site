@@ -1,6 +1,10 @@
 import { prisma } from '@novelverse/db';
-import { fail, handleOpsApiError, message, OpsApiError, requireOpsAdmin } from '@/lib/api';
-import { parseRoleInput, readJsonBody } from '@/lib/admin-mutation-validation';
+import { fail, handleOpsApiError, message, OpsApiError, requireOpsAdmin } from '../../../../../../lib/api';
+import {
+  parseRoleInput,
+  readJsonBody,
+  resolveRoleMutationSettings,
+} from '../../../../../../lib/admin-mutation-validation';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -31,6 +35,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           nickname: true,
           role: true,
           isVerifiedAuthor: true,
+          canSkipReview: true,
           suspendedAt: true,
         },
       });
@@ -39,11 +44,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         throw new OpsApiError(400, '본인의 관리자 권한은 해제할 수 없습니다.');
       }
 
-      const nextVerified = input.data.role === 'AUTHOR' || input.data.role === 'ADMIN'
-        ? true
-        : input.data.isVerifiedAuthor ?? false;
+      const {
+        isVerifiedAuthor: nextVerified,
+        canSkipReview: nextCanSkipReview,
+      } = resolveRoleMutationSettings(input.data, user);
 
-      if (user.role === input.data.role && user.isVerifiedAuthor === nextVerified) return false;
+      if (
+        user.role === input.data.role
+        && user.isVerifiedAuthor === nextVerified
+        && user.canSkipReview === nextCanSkipReview
+      ) return false;
 
       if (user.role === 'ADMIN' && input.data.role !== 'ADMIN' && !user.suspendedAt) {
         const adminCount = await tx.user.count({
@@ -64,10 +74,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           id,
           role: user.role,
           isVerifiedAuthor: user.isVerifiedAuthor,
+          canSkipReview: user.canSkipReview,
         },
         data: {
           role: input.data.role,
           isVerifiedAuthor: nextVerified,
+          canSkipReview: nextCanSkipReview,
           ...(verifiedAt !== undefined && { verifiedAt }),
         },
       });
@@ -80,17 +92,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           adminId: admin.id,
           action: user.role !== input.data.role
             ? 'user.role.update'
-            : nextVerified
-              ? 'user.author.verify'
-              : 'user.author.unverify',
+            : user.isVerifiedAuthor !== nextVerified
+              ? nextVerified
+                ? 'user.author.verify'
+                : 'user.author.unverify'
+              : nextCanSkipReview
+                ? 'user.review-exemption.enable'
+                : 'user.review-exemption.disable',
           targetType: 'user',
           targetId: id,
-          message: `${user.nickname || user.email} 계정을 ${input.data.role} 역할로 변경했습니다.`,
+          message: `${user.nickname || user.email} 계정의 역할과 작가 설정을 변경했습니다.`,
           metadata: {
             previousRole: user.role,
             nextRole: input.data.role,
             previousIsVerifiedAuthor: user.isVerifiedAuthor,
             nextIsVerifiedAuthor: nextVerified,
+            previousCanSkipReview: user.canSkipReview,
+            nextCanSkipReview,
           },
         },
       });
@@ -98,7 +116,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return true;
     });
 
-    if (!changed) return message('이미 같은 계정 권한과 작가 인증 상태입니다.');
+    if (!changed) return message('이미 같은 계정 권한과 작가 설정 상태입니다.');
     return message('계정 권한을 저장했습니다.');
   } catch (error) {
     return handleOpsApiError(error, '계정 권한 변경에 실패했습니다.');

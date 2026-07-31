@@ -38,7 +38,7 @@ async function main() {
     }
 
     const candidates = await client.query(
-      'SELECT "id", "email", "emailVerified", "role", "suspendedAt" FROM "users" WHERE "emailNormalized" = $1 LIMIT 2',
+      'SELECT "id", "email", "emailVerified", "role", "canSkipReview", "suspendedAt" FROM "users" WHERE "emailNormalized" = $1 LIMIT 2',
       [email],
     );
     if (candidates.rowCount !== 1) {
@@ -54,7 +54,7 @@ async function main() {
     }
 
     await client.query(
-      'UPDATE "users" SET "role" = \'ADMIN\'::"Role", "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = $1',
+      'UPDATE "users" SET "role" = \'ADMIN\'::"Role", "canSkipReview" = false, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = $1',
       [user.id],
     );
     await client.query(
@@ -65,7 +65,13 @@ async function main() {
         crypto.randomUUID(),
         user.id,
         '최초 관리자 bootstrap으로 사용자를 ADMIN으로 승격했습니다.',
-        JSON.stringify({ source: 'BOOTSTRAP_ADMIN_EMAIL', previousRole: user.role, nextRole: 'ADMIN' }),
+        JSON.stringify({
+          source: 'BOOTSTRAP_ADMIN_EMAIL',
+          previousRole: user.role,
+          nextRole: 'ADMIN',
+          previousCanSkipReview: user.canSkipReview,
+          nextCanSkipReview: false,
+        }),
       ],
     );
 

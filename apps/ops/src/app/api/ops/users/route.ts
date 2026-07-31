@@ -37,6 +37,7 @@ export async function GET(request: Request) {
           name: true,
           role: true,
           isVerifiedAuthor: true,
+          canSkipReview: true,
           suspendedAt: true,
           suspensionReason: true,
           createdAt: true,

@@ -189,7 +189,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           }),
           transaction.user.findUnique({
             where: { id: session.user.id },
-            select: { role: true },
+            select: { role: true, canSkipReview: true },
           }),
         ]);
         if (!chapter) throw new ApiError(404, '회차를 찾을 수 없습니다.');
@@ -201,7 +201,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         const resetReview = shouldResetReviewAfterAuthorChange(chapter.novel, {
           id: session.user.id,
-          role: isAdmin ? 'ADMIN' : null,
+          role: currentUser?.role,
+          canSkipReview: currentUser?.canSkipReview === true,
         });
         const isNewlyPublished = body.isPublished && !chapter.isPublished;
         const deletedIllustrationPaths = body.content !== undefined
@@ -315,7 +316,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }),
         transaction.user.findUnique({
           where: { id: session.user.id },
-          select: { role: true },
+          select: { role: true, canSkipReview: true },
         }),
       ]);
       if (!chapter) throw new ApiError(404, '회차를 찾을 수 없습니다.');
@@ -326,7 +327,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       assertContestContentMutationAllowed(chapter.novel, { isAdmin });
       const resetReview = shouldResetReviewAfterAuthorChange(chapter.novel, {
         id: session.user.id,
-        role: isAdmin ? 'ADMIN' : null,
+        role: currentUser?.role,
+        canSkipReview: currentUser?.canSkipReview === true,
       });
       await transaction.chapter.delete({ where: { id: chapterId } });
       if (resetReview) {

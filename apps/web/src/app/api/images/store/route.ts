@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
           }),
           transaction.user.findUnique({
             where: { id: session.user.id },
-            select: { role: true },
+            select: { role: true, canSkipReview: true },
           }),
         ]);
 
@@ -112,7 +112,8 @@ export async function POST(request: NextRequest) {
 
         const resetReview = shouldResetReviewAfterAuthorChange(novel, {
           id: session.user.id,
-          role: isAdmin ? 'ADMIN' : null,
+          role: currentUser?.role,
+          canSkipReview: currentUser?.canSkipReview === true,
         });
 
         await transaction.novel.update({

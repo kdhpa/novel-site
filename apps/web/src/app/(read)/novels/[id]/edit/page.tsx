@@ -43,13 +43,18 @@ async function getNovel(id: string, userId: string) {
       },
       approvalStatus: true,
       approvalNote: true,
+      author: { select: { canSkipReview: true } },
       tags: { select: { tag: { select: { name: true } } } },
       _count: { select: { chapters: true } },
     },
   });
 }
 
-function getReviewDescription(status: ApprovalStatus, chapterCount: number) {
+function getReviewDescription(
+  status: ApprovalStatus,
+  chapterCount: number,
+  canSkipReview: boolean,
+) {
   if (status === 'PENDING_REVIEW') {
     return '운영팀이 작품을 검토하고 있습니다. 작품 정보나 회차를 변경하면 심사 요청이 취소됩니다.';
   }
@@ -59,7 +64,9 @@ function getReviewDescription(status: ApprovalStatus, chapterCount: number) {
   }
 
   if (status === 'APPROVED') {
-    return '심사가 승인되어 독자에게 공개 중인 작품입니다.';
+    return canSkipReview
+      ? '수정 재심사 면제 작가입니다. 작품을 수정해도 승인 및 공개 상태가 유지됩니다.'
+      : '심사가 승인되어 독자에게 공개 중인 작품입니다.';
   }
 
   return chapterCount > 0
@@ -99,7 +106,11 @@ export default async function EditNovelPage({ params }: PageProps) {
                 <ApprovalStatusBadge status={novel.approvalStatus} />
               </div>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-                {getReviewDescription(novel.approvalStatus, novel._count.chapters)}
+                {getReviewDescription(
+                  novel.approvalStatus,
+                  novel._count.chapters,
+                  novel.author.canSkipReview,
+                )}
               </p>
               {novel.approvalStatus === 'REJECTED' && novel.approvalNote && (
                 <p className="mt-2 rounded-md border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">

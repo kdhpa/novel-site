@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const migrationsDirectory = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
+const bootstrapAdminScript = readFileSync(
+  fileURLToPath(new URL('../scripts/bootstrap-admin.mjs', import.meta.url)),
+  'utf8',
+);
 
 function migrationSqlFiles() {
   return readdirSync(migrationsDirectory, { withFileTypes: true })
@@ -29,5 +33,29 @@ describe('database migration contracts', () => {
     expect(latestStorageConstraint?.sql).toContain("'job_expired'");
     expect(latestStorageConstraint?.sql).toContain('"finalizationAttempts" >= 5');
     expect(latestStorageConstraint?.sql).not.toContain('"tokenExpiresAt" > CURRENT_TIMESTAMP');
+  });
+
+  it('stores review exemption as opt-in and restricts it to authors', () => {
+    const reviewExemptionMigration = migrationSqlFiles()
+      .filter(({ sql }) => sql.includes('ADD COLUMN "canSkipReview"'))
+      .at(-1);
+
+    expect(reviewExemptionMigration).toBeDefined();
+    expect(reviewExemptionMigration?.sql).toContain(
+      'ADD COLUMN "canSkipReview" BOOLEAN NOT NULL DEFAULT false',
+    );
+    expect(reviewExemptionMigration?.sql).toContain(
+      'CHECK (NOT "canSkipReview" OR "role" = \'AUTHOR\')',
+    );
+    expect(reviewExemptionMigration?.sql).toContain(
+      'VALIDATE CONSTRAINT "users_can_skip_review_author"',
+    );
+  });
+
+  it('clears review exemption when bootstrap promotes an author to admin', () => {
+    expect(bootstrapAdminScript).toContain('UPDATE "users" SET "role"');
+    expect(bootstrapAdminScript).toContain('"canSkipReview" = false, "updatedAt"');
+    expect(bootstrapAdminScript).toContain('previousCanSkipReview: user.canSkipReview');
+    expect(bootstrapAdminScript).toContain('nextCanSkipReview: false');
   });
 });

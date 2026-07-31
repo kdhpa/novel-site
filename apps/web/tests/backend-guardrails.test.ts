@@ -11,7 +11,7 @@ import {
 
 describe('심사 상태 가드레일', () => {
   it('작가가 심사 대기 또는 승인된 작품을 변경하면 심사 상태를 초기화한다', () => {
-    const actor = { id: 'author-1', role: 'AUTHOR' };
+    const actor = { id: 'author-1', role: 'AUTHOR', canSkipReview: false };
 
     expect(shouldResetReviewAfterAuthorChange(
       { authorId: 'author-1', approvalStatus: 'PENDING_REVIEW' }, actor
@@ -34,18 +34,33 @@ describe('심사 상태 가드레일', () => {
 
     expect(shouldResetReviewAfterAuthorChange(
       { authorId: 'author-1', approvalStatus: 'DRAFT' },
-      { id: 'author-1', role: 'AUTHOR' }
+      { id: 'author-1', role: 'AUTHOR', canSkipReview: false }
     )).toBe(false);
     expect(shouldResetReviewAfterAuthorChange(
       { authorId: 'author-1', approvalStatus: 'REJECTED' },
-      { id: 'author-1', role: 'AUTHOR' }
+      { id: 'author-1', role: 'AUTHOR', canSkipReview: false }
     )).toBe(false);
     expect(shouldResetReviewAfterAuthorChange(
-      approvedNovel, { id: 'author-2', role: 'AUTHOR' }
+      approvedNovel, { id: 'author-2', role: 'AUTHOR', canSkipReview: false }
     )).toBe(false);
     expect(shouldResetReviewAfterAuthorChange(
-      approvedNovel, { id: 'author-1', role: 'ADMIN' }
+      approvedNovel, { id: 'author-1', role: 'ADMIN', canSkipReview: false }
     )).toBe(false);
+  });
+
+  it('수정 재심사 면제 작가는 승인 작품만 승인·공개 상태를 유지한다', () => {
+    const actor = { id: 'author-1', role: 'AUTHOR', canSkipReview: true };
+
+    expect(shouldResetReviewAfterAuthorChange(
+      { authorId: 'author-1', approvalStatus: 'APPROVED' }, actor
+    )).toBe(false);
+    expect(shouldResetReviewAfterAuthorChange(
+      { authorId: 'author-1', approvalStatus: 'PENDING_REVIEW' }, actor
+    )).toBe(true);
+    expect(shouldResetReviewAfterAuthorChange(
+      { authorId: 'author-1', approvalStatus: 'APPROVED' },
+      { ...actor, role: 'USER' }
+    )).toBe(true);
   });
 });
 

@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
           bio: true,
           role: true,
           isVerifiedAuthor: true,
+          canSkipReview: true,
           verifiedAt: true,
           suspendedAt: true,
           suspensionReason: true,

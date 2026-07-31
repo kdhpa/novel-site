@@ -173,8 +173,8 @@ export function parseAiProviderSettingInput(
 
 export function parseRoleInput(
   value: unknown
-): ValidationResult<{ role: Role; isVerifiedAuthor?: boolean }> {
-  if (!isRecord(value) || !hasOnlyKeys(value, ['role', 'isVerifiedAuthor'])) {
+): ValidationResult<{ role: Role; isVerifiedAuthor?: boolean; canSkipReview?: boolean }> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['role', 'isVerifiedAuthor', 'canSkipReview'])) {
     return failure('허용되지 않은 입력 항목이 포함되어 있습니다.');
   }
 
@@ -186,10 +186,29 @@ export function parseRoleInput(
     return failure('작가 인증 여부는 true 또는 false로 지정해 주세요.');
   }
 
+  if (value.canSkipReview !== undefined && typeof value.canSkipReview !== 'boolean') {
+    return failure('수정 재심사 면제 여부를 true 또는 false로 지정해 주세요.');
+  }
+
   return success({
     role: value.role as Role,
     ...(value.isVerifiedAuthor !== undefined && { isVerifiedAuthor: value.isVerifiedAuthor }),
+    ...(value.canSkipReview !== undefined && { canSkipReview: value.canSkipReview }),
   });
+}
+
+export function resolveRoleMutationSettings(
+  input: { role: Role; isVerifiedAuthor?: boolean; canSkipReview?: boolean },
+  current: { canSkipReview: boolean },
+): { isVerifiedAuthor: boolean; canSkipReview: boolean } {
+  return {
+    isVerifiedAuthor: input.role === 'AUTHOR' || input.role === 'ADMIN'
+      ? true
+      : input.isVerifiedAuthor ?? false,
+    canSkipReview: input.role === 'AUTHOR'
+      ? input.canSkipReview ?? current.canSkipReview
+      : false,
+  };
 }
 
 export function parseSuspensionInput(

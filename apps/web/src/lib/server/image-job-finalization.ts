@@ -122,7 +122,7 @@ async function assertTransactionNovelAccess(
   const [user, novel] = await Promise.all([
     transaction.user.findUnique({
       where: { id: job.userId },
-      select: { role: true },
+      select: { role: true, canSkipReview: true },
     }),
     transaction.novel.findUnique({
       where: { id: job.novelId },
@@ -223,6 +223,7 @@ async function commitFinalizedImage(
       if (shouldResetReviewAfterAuthorChange(access.novel, {
         id: job.userId,
         role: access.user.role,
+        canSkipReview: access.user.canSkipReview,
       })) {
         await transaction.novel.update({
           where: { id: job.novelId },

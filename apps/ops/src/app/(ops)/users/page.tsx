@@ -42,6 +42,7 @@ export default async function OpsUsersPage({ searchParams }: { searchParams: Pro
         name: true,
         role: true,
         isVerifiedAuthor: true,
+        canSkipReview: true,
         suspendedAt: true,
         suspensionReason: true,
         createdAt: true,
@@ -92,6 +93,7 @@ export default async function OpsUsersPage({ searchParams }: { searchParams: Pro
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-xs text-blue-200">{RoleLabels[user.role]}</span>
                     {user.isVerifiedAuthor && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-200">인증 작가</span>}
+                    {user.canSkipReview && <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs text-violet-200">수정 재심사 면제</span>}
                     {user.suspendedAt && <span title={user.suspensionReason || undefined} className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-200">정지됨</span>}
                   </div>
                 </td>
@@ -102,6 +104,7 @@ export default async function OpsUsersPage({ searchParams }: { searchParams: Pro
                     userId={user.id}
                     role={user.role}
                     isVerifiedAuthor={user.isVerifiedAuthor}
+                    canSkipReview={user.canSkipReview}
                     suspendedAt={user.suspendedAt?.toISOString() || null}
                     suspensionReason={user.suspensionReason}
                   />
