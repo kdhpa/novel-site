@@ -8,8 +8,10 @@ export interface FormatOptions {
 }
 
 export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
-  autoLineBreak: true,
-  dialogueSeparation: true,
+  // 문단과 대사의 배치는 작가의 의도로 간주한다. 기본 정리는 구조를
+  // 새로 만들지 않고 명백한 공백/오타만 손본다.
+  autoLineBreak: false,
+  dialogueSeparation: false,
   autoSpacing: true,
   typoCorrection: true,
 };
@@ -55,9 +57,11 @@ export function separateDialogue(text: string): string {
 
 export function autoSpacing(text: string): string {
   return text
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
     .replace(/\s+([.,!?])/g, '$1')
-    .replace(/([.,!?])([^\s\n])/g, '$1 $2')
     .trim();
 }
 
@@ -74,30 +78,42 @@ export function formatPlainText(text: string, options: Partial<FormatOptions> = 
 }
 
 export function formatHtmlContent(html: string, options: Partial<FormatOptions> = {}): string {
-  const tagPlaceholders = new Map<string, string>();
-  let tagIndex = 0;
-  let result = html.replace(/<[^>]+>/g, (match) => {
-    const placeholder = `__TAG_${tagIndex++}__`;
-    tagPlaceholders.set(placeholder, match);
-    return placeholder;
-  });
+  const opts = { ...DEFAULT_FORMAT_OPTIONS, ...options };
+  let insideLiteralBlock = false;
 
-  result = formatPlainText(result, options);
+  const result = html
+    .split(/(<[^>]+>)/g)
+    .map((part) => {
+      if (!part) return part;
+      if (part.startsWith('<')) {
+        if (/^<(pre|code)\b/i.test(part)) insideLiteralBlock = true;
+        if (/^<\/(pre|code)>/i.test(part)) insideLiteralBlock = false;
+        return part;
+      }
+      if (insideLiteralBlock) return part;
 
-  for (const [placeholder, tag] of tagPlaceholders) {
-    result = result.split(placeholder).join(tag);
-  }
-
-  return result
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      if (/^<(p|div|h[1-6]|blockquote|ul|ol|li|figure)/i.test(line)) return line;
-      if (/<\/(p|div|h[1-6]|blockquote)>$/i.test(line)) return line;
-      return `<p>${line}</p>`;
+      let text = part;
+      if (opts.typoCorrection) text = correctTypos(text);
+      if (opts.autoSpacing) {
+        text = text
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/[\u200B-\u200D\uFEFF]/g, '')
+          .replace(/[ \t]{2,}/g, ' ')
+          .replace(/[ \t]+\n/g, '\n')
+          .replace(/\s+([.,!?])/g, '$1');
+      }
+      if (opts.dialogueSeparation) text = separateDialogue(text);
+      if (opts.autoLineBreak) text = autoLineBreak(text);
+      return text;
     })
-    .join('\n');
+    .join('');
+
+  // TipTap에서 빈 <p> 하나는 의도한 한 줄 공백이다. 두 개 이상 연속된
+  // 빈 문단만 하나로 줄여 원래 문단 구조와 삽화 태그를 보존한다.
+  return result
+    .replace(/<p(?:\s[^>]*)?>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '<p></p>')
+    .replace(/(?:\s*<p><\/p>\s*){2,}/gi, '<p></p>')
+    .trim();
 }
 
 export interface FormatPreview {

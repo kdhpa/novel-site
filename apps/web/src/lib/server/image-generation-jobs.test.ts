@@ -44,6 +44,7 @@ import { verifyImageJobToken } from './image-job-token';
 import {
   createPersistentImageGenerationJob,
   runImageJobMaintenance,
+  stableImageSeed,
 } from './image-generation-jobs';
 
 const now = new Date('2026-07-17T10:00:00.000Z');
@@ -217,5 +218,16 @@ describe('persistent image generation job creation', () => {
       '203.0.113.10'
     )).rejects.toMatchObject({ status: 409 });
     expect(mocks.createPrediction).not.toHaveBeenCalled();
+  });
+});
+
+describe('character image DNA seed', () => {
+  it('같은 인물 ID에는 항상 같은 시드를 만들고 다른 인물과는 구분한다', () => {
+    const first = stableImageSeed('portrait-dna:v1:character-1');
+
+    expect(stableImageSeed('portrait-dna:v1:character-1')).toBe(first);
+    expect(stableImageSeed('portrait-dna:v1:character-2')).not.toBe(first);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThanOrEqual(0x7fffffff);
   });
 });

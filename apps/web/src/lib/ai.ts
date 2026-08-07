@@ -477,7 +477,8 @@ async function createReplicatePrediction(
   width: number,
   height: number,
   aspectRatio: NonNullable<AIImageRequest['aspectRatio']>,
-  waitForInitialResult: boolean
+  waitForInitialResult: boolean,
+  seed?: number
 ): Promise<ReplicatePrediction> {
   const backend = getReplicateBackend();
   let webhookConfig: ReturnType<typeof getReplicateImageWebhookConfig>;
@@ -501,6 +502,7 @@ async function createReplicatePrediction(
           disable_safety_checker: false,
           go_fast: true,
           megapixels: '1',
+          ...(seed === undefined ? {} : { seed }),
         },
       }
     : {
@@ -524,6 +526,7 @@ async function createReplicatePrediction(
             1,
             20
           ),
+          ...(seed === undefined ? {} : { seed }),
         },
       };
   const response = await fetchReplicate(backend.url, {
@@ -540,7 +543,8 @@ async function createReplicateImage(
   negativePrompt: string,
   width: number,
   height: number,
-  aspectRatio: NonNullable<AIImageRequest['aspectRatio']>
+  aspectRatio: NonNullable<AIImageRequest['aspectRatio']>,
+  seed?: number
 ): Promise<string> {
   const prediction = await createReplicatePrediction(
     prompt,
@@ -548,7 +552,8 @@ async function createReplicateImage(
     width,
     height,
     aspectRatio,
-    true
+    true,
+    seed
   );
 
   const completed = SUCCESS_STATUSES.has(prediction.status || '')
@@ -583,7 +588,8 @@ export async function createImagePrediction(
     dimensions.width,
     dimensions.height,
     aspectRatio,
-    false
+    false,
+    request.seed
   );
 
   if (!prediction.id) {
@@ -629,7 +635,8 @@ export async function generateImage(
       negativePrompt,
       dimensions.width,
       dimensions.height,
-      aspectRatio
+      aspectRatio,
+      request.seed
     );
 
     return {
@@ -831,7 +838,9 @@ export async function generateChapterIllustrationWithCharacters(
 export function buildCharacterPortraitImageRequest(
   appearance: string,
   genre: string = 'fantasy',
-  style: AIImageRequest['style'] = 'anime'
+  style: AIImageRequest['style'] = 'anime',
+  seed?: number,
+  variation?: string
 ): AIImageRequest {
   const genreStyleHints: Record<string, string> = {
     FANTASY: 'fantasy character portrait, magical atmosphere',
@@ -846,7 +855,14 @@ export function buildCharacterPortraitImageRequest(
 
   const styleHint = genreStyleHints[genre.toUpperCase()] || genreStyleHints.OTHER;
 
-  const prompt = `${styleHint}. Character appearance: ${appearance}. Upper body portrait, facing camera, detailed face, clean background`;
+  const prompt = [
+    `${styleHint}. Character identity DNA: ${appearance}.`,
+    'Preserve the exact same facial identity, face shape, eyes, hair, apparent age, and signature features across every image.',
+    variation
+      ? `Requested variation only: ${variation}. Keep all other identity features unchanged.`
+      : '',
+    'Upper body portrait, facing camera, detailed face, clean background',
+  ].filter(Boolean).join(' ');
 
   return {
     prompt,
@@ -854,6 +870,7 @@ export function buildCharacterPortraitImageRequest(
       'text, watermark, signature, blurry, low quality, deformed face, multiple faces, bad anatomy',
     style,
     aspectRatio: '1:1',
+    seed,
   };
 }
 

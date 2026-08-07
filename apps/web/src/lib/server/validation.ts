@@ -185,7 +185,9 @@ export const aiImageSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   novelId: z.string().trim().max(100).optional(),
   characterId: z.string().trim().max(100).optional(),
+  characterIds: z.array(z.string().trim().min(1).max(100)).max(4).optional(),
   appearance: z.string().trim().max(3000).optional(),
+  variation: z.string().trim().max(500).optional(),
   options: z
     .object({
       style: z.enum(['anime', 'realistic', 'fantasy', 'watercolor']).optional(),

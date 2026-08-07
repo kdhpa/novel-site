@@ -70,6 +70,21 @@ export default function CharacterForm({
     }));
   };
 
+  const handlePortraitRemoved = async () => {
+    if (!character) return;
+
+    const response = await fetch(`/api/novels/${novelId}/characters/${character.id}`, {
+      method: 'PATCH',
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || '초상화 삭제에 실패했습니다.');
+    }
+
+    setFormData((prev) => ({ ...prev, portraitUrl: '', portraitPrompt: '' }));
+    router.refresh();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submissionInFlightRef.current) return;
@@ -192,6 +207,7 @@ export default function CharacterForm({
             genre={novelGenre}
             currentPortraitUrl={formData.portraitUrl}
             onGenerated={handlePortraitGenerated}
+            onRemoved={handlePortraitRemoved}
           />
         </section>
       ) : formData.appearance.trim() ? (

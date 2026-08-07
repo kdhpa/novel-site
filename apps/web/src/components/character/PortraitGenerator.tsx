@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
+import { Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import type { Genre } from '@/types';
 import { isOptimizableImageSource } from '@/lib/image-hosts';
@@ -23,6 +24,7 @@ interface PortraitGeneratorProps {
   genre?: Genre;
   currentPortraitUrl?: string | null;
   onGenerated?: (imageUrl: string, prompt: string) => void;
+  onRemoved?: () => Promise<void>;
 }
 
 const STYLE_OPTIONS = [
@@ -41,12 +43,15 @@ export default function PortraitGenerator({
   genre,
   currentPortraitUrl,
   onGenerated,
+  onRemoved,
 }: PortraitGeneratorProps) {
   const { data: session } = useSession();
   const ownerUserId = session?.user?.id || '';
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState<string>('anime');
+  const [variation, setVariation] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentPortraitUrl || null);
   const [error, setError] = useState<string | null>(null);
   const [enhancedPrompt, setEnhancedPrompt] = useState<string | null>(null);
@@ -115,6 +120,7 @@ export default function PortraitGenerator({
       removeRecoverableImageJob(jobStorageKey);
       if (mountedRef.current && generationAbortRef.current === controller) {
         setPreviewUrl(completed.imageUrl);
+        setVariation('');
         setGenerationStatus('');
         onGeneratedRef.current?.(completed.imageUrl, completed.prompt);
       }
@@ -179,6 +185,7 @@ export default function PortraitGenerator({
         type: 'portrait',
         characterId,
         appearance: enhancedPrompt || appearance,
+        variation: variation.trim() || undefined,
         style: selectedStyle,
         genre,
       },
@@ -196,6 +203,24 @@ export default function PortraitGenerator({
     setIsGenerating(false);
     setGenerationStatus('');
     controller?.abort();
+  };
+
+  const handleRemove = async () => {
+    if (!previewUrl || isRemoving || !onRemoved) return;
+    if (!window.confirm('이 등장인물의 초상화를 삭제하시겠습니까?')) return;
+
+    setIsRemoving(true);
+    setError(null);
+    try {
+      await onRemoved();
+      setPreviewUrl(null);
+      setEnhancedPrompt(null);
+      setShowEnhanced(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '초상화 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   const handleEnhanceAppearance = async () => {
@@ -297,13 +322,31 @@ export default function PortraitGenerator({
             </div>
           </div>
 
+          <div>
+            <label htmlFor="portrait-variation" className="mb-1 block text-sm font-medium text-zinc-300">
+              유지한 채 바꿀 부분 <span className="font-normal text-zinc-500">(선택)</span>
+            </label>
+            <input
+              id="portrait-variation"
+              value={variation}
+              onChange={(event) => setVariation(event.target.value)}
+              maxLength={500}
+              disabled={isGenerating}
+              placeholder="예: 미소 짓는 표정, 겨울 코트, 옆을 보는 자세"
+              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary disabled:opacity-60"
+            />
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              인물 고유 시드와 외형 DNA는 고정하고 입력한 부분만 변경합니다.
+            </p>
+          </div>
+
           <aside
             aria-label="외부 AI 데이터 전송 안내"
             className="rounded-md border border-accent-muted/60 bg-accent-muted/10 px-3 py-2 text-xs leading-5 text-foreground-secondary"
           >
             <span className="font-semibold text-accent">외부 AI 전송 안내</span>
             <span className="mt-1 block">
-              초상화 생성 시 외형 설명과 장르가 Replicate로 전송됩니다. 프롬프트 변환을 사용하면 외형 설명이 Gemini에도 전송됩니다. 민감정보나 타인의 개인정보를 입력하지 마세요.
+              초상화 생성 시 외형 설명·변경 요청·장르가 Replicate로 전송됩니다. 프롬프트 변환을 사용하면 외형 설명이 Gemini에도 전송됩니다. 민감정보나 타인의 개인정보를 입력하지 마세요.
             </span>
             <label className="mt-2 flex items-start gap-2 text-zinc-300">
               <input
@@ -389,6 +432,18 @@ export default function PortraitGenerator({
                 size="sm"
               >
                 확인 중단
+              </Button>
+            )}
+            {previewUrl && onRemoved && (
+              <Button
+                type="button"
+                onClick={handleRemove}
+                disabled={isGenerating || isRemoving}
+                variant="ghost"
+                size="sm"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isRemoving ? '삭제 중...' : '초상화 삭제'}
               </Button>
             )}
           </div>

@@ -184,6 +184,99 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+// PATCH /api/novels/[id]/characters/[characterId] - Remove character portrait
+export async function PATCH(_request: NextRequest, { params }: RouteParams) {
+  try {
+    const session = await auth();
+    const { id, characterId } = await params;
+
+    if (!session?.user) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: '로그인이 필요합니다.' },
+        { status: 401 }
+      );
+    }
+
+    await assertRateLimit({
+      key: `content:character-write:${session.user.id}`,
+      limit: 30,
+      windowMs: 60 * 1000,
+    });
+
+    const removedPortrait = await prisma.$transaction(async (transaction) => {
+      await acquireAdminRoleReadLock(transaction);
+      await acquireNovelMutationLock(transaction, id);
+      const [novel, existingCharacter, currentUser] = await Promise.all([
+        transaction.novel.findUnique({
+          where: { id },
+          select: {
+            authorId: true,
+            approvalStatus: true,
+            seasonId: true,
+            season: { select: { endsAt: true } },
+          },
+        }),
+        transaction.character.findFirst({
+          where: { id: characterId, novelId: id },
+          select: { id: true, portraitUrl: true },
+        }),
+        transaction.user.findUnique({
+          where: { id: session.user.id },
+          select: { role: true, canSkipReview: true },
+        }),
+      ]);
+
+      if (!novel) throw new ApiError(404, '작품을 찾을 수 없습니다.');
+      const isAdmin = currentUser?.role === 'ADMIN';
+      if (novel.authorId !== session.user.id && !isAdmin) {
+        throw new ApiError(403, '수정 권한이 없습니다.');
+      }
+      assertContestContentMutationAllowed(novel, { isAdmin });
+      if (!existingCharacter) throw new ApiError(404, '캐릭터를 찾을 수 없습니다.');
+
+      const resetReview = shouldResetReviewAfterAuthorChange(novel, {
+        id: session.user.id,
+        role: currentUser?.role,
+        canSkipReview: currentUser?.canSkipReview === true,
+      });
+      await transaction.character.update({
+        where: { id: characterId },
+        data: { portraitUrl: null, portraitPrompt: null },
+      });
+      if (resetReview) {
+        await transaction.novel.update({ where: { id }, data: reviewResetData() });
+      }
+
+      return {
+        authorId: novel.authorId,
+        portraitUrl: existingCharacter.portraitUrl,
+        resetReview,
+      };
+    });
+
+    after(() => cleanupStoredImageIfUnreferenced({
+      bucket: 'PORTRAITS',
+      source: removedPortrait.portraitUrl,
+      ownerFolders: [
+        id,
+        `${id}-${characterId}`,
+        removedPortrait.authorId,
+        `user-${removedPortrait.authorId}`,
+      ],
+      scope: 'character-portrait.remove',
+    }));
+
+    return NextResponse.json<ApiResponse>({
+      success: true,
+      message: removedPortrait.resetReview
+        ? '초상화가 삭제되어 작품 심사 상태가 초기화되고 비공개되었습니다.'
+        : '초상화가 삭제되었습니다.',
+    });
+  } catch (error) {
+    return handleApiError(error, '초상화 삭제에 실패했습니다.');
+  }
+}
+
 // DELETE /api/novels/[id]/characters/[characterId] - Delete character
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {

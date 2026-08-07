@@ -43,7 +43,9 @@ export interface CreateImageJobBody extends Partial<AIImageRequest> {
   description?: string;
   novelId?: string;
   characterId?: string;
+  characterIds?: string[];
   appearance?: string;
+  variation?: string;
   options?: Partial<CoverGenerationOptions>;
 }
 
@@ -51,7 +53,7 @@ export type PreparedImageJob = {
   type: ImageJobType;
   novelId: string | null;
   imageRequest: AIImageRequest;
-  metadata: Record<string, string | number | boolean>;
+  metadata: Record<string, string | number | boolean | string[]>;
 };
 
 export type CreatedImageJob = {
@@ -68,6 +70,10 @@ export type CreatedImageJob = {
 function requirePrompt(prompt: string | undefined, message: string) {
   if (!prompt?.trim()) throw new ApiError(400, message);
   return prompt.trim();
+}
+
+export function stableImageSeed(identity: string): number {
+  return crypto.createHash('sha256').update(identity).digest().readUInt32BE(0) & 0x7fffffff;
 }
 
 function canonicalJson(value: unknown): string {
@@ -279,15 +285,24 @@ async function preparePortraitJob(
 
   const genre = body.genre || character.novel.genres[0] || 'OTHER';
   const style = body.style || 'anime';
+  const seed = stableImageSeed(`portrait-dna:v1:${characterId}`);
   return {
     type: 'portrait',
     novelId: character.novelId,
-    imageRequest: buildCharacterPortraitImageRequest(appearance, genre, style),
+    imageRequest: buildCharacterPortraitImageRequest(
+      appearance,
+      genre,
+      style,
+      seed,
+      body.variation
+    ),
     metadata: {
       version: 1,
       characterId,
       genre,
       style,
+      seed,
+      identityVersion: 1,
     },
   };
 }
@@ -308,16 +323,43 @@ export async function prepareImageGenerationJob(
       body.prompt,
       '삽화를 생성하려면 프롬프트가 필요합니다.'
     );
+    const characterIds = [...new Set(body.characterIds || [])].slice(0, 4);
+    const identityCharacters = body.novelId && characterIds.length > 0
+      ? await prisma.character.findMany({
+          where: { novelId: body.novelId, id: { in: characterIds } },
+          select: { id: true, name: true, appearance: true },
+        })
+      : [];
+    const identityContext = identityCharacters
+      .map((character) => `${character.name}: ${character.appearance}`)
+      .join(' / ');
+    const promptWithIdentity = identityContext
+      ? `${prompt}\nCharacter identity DNA (preserve the same face, hair, eyes, age, and signature features): ${identityContext}`
+      : prompt;
+    const seed = identityCharacters.length > 0
+      ? stableImageSeed(
+          `illustration-dna:v1:${identityCharacters.map((item) => item.id).sort().join(':')}`
+        )
+      : undefined;
     const imageRequest = buildChapterIllustrationImageRequest(
-      prompt,
+      promptWithIdentity,
       body.genre || 'fantasy',
       body.style
     );
+    imageRequest.seed = seed;
     return {
       type: body.type,
       novelId: body.novelId || null,
       imageRequest,
-      metadata: { version: 1, style: imageRequest.style || 'anime' },
+      metadata: {
+        version: 1,
+        style: imageRequest.style || 'anime',
+        ...(seed === undefined ? {} : {
+          seed,
+          identityVersion: 1,
+          characterIds: identityCharacters.map((item) => item.id),
+        }),
+      },
     };
   }
 

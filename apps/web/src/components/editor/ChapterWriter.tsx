@@ -190,6 +190,9 @@ export default function ChapterWriter({
   const [aiImage, setAiImage] = useState(initialFormRef.current.aiImage || '');
   const [aiImagePrompt, setAiImagePrompt] = useState(initialFormRef.current.aiImagePrompt || '');
   const [imagePrompt, setImagePrompt] = useState(initialFormRef.current.aiImagePrompt || '');
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>(() =>
+    characters.slice(0, 4).map((character) => character.id)
+  );
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -607,6 +610,7 @@ export default function ChapterWriter({
         style: 'anime',
         aspectRatio: '16:9',
         novelId,
+        characterIds: selectedCharacterIds,
       },
       updatedAt: new Date().toISOString(),
     };
@@ -631,7 +635,10 @@ export default function ChapterWriter({
     setAnalysisResult(null);
     setAnalysisError('');
     const scene = plainText.slice(0, 500);
-    const characterHint = characters
+    const selectedCharacters = selectedCharacterIds.length > 0
+      ? characters.filter((character) => selectedCharacterIds.includes(character.id))
+      : characters;
+    const characterHint = selectedCharacters
       .slice(0, 4)
       .map((character) => `${character.name}: ${character.appearance}`)
       .join(' / ');
@@ -935,7 +942,7 @@ export default function ChapterWriter({
               <ImagePlus className="h-4 w-4" />
             </ToolbarButton>
             <span className="mx-1 h-6 w-px bg-border" />
-            <ToolbarButton label="오타 정리" onClick={applyAutoCorrection}>
+            <ToolbarButton label="공백·맞춤법 정리" onClick={applyAutoCorrection}>
               <Wand2 className="h-4 w-4" />
             </ToolbarButton>
           </div>
@@ -968,6 +975,40 @@ export default function ChapterWriter({
               <Sparkles className="h-4 w-4 text-accent" />
               <label htmlFor="chapter-image-prompt">AI 삽화</label>
             </h2>
+            {characters.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-2 text-xs font-medium text-zinc-400">인물 DNA 적용</p>
+                <div className="flex flex-wrap gap-2">
+                  {characters.map((character) => {
+                    const selected = selectedCharacterIds.includes(character.id);
+                    return (
+                      <button
+                        key={character.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setSelectedCharacterIds((current) =>
+                          current.includes(character.id)
+                            ? current.filter((id) => id !== character.id)
+                            : current.length < 4
+                              ? [...current, character.id]
+                              : current
+                        )}
+                        className={`min-h-9 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                          selected
+                            ? 'border-accent-muted bg-accent-muted/15 text-accent'
+                            : 'border-border text-zinc-500 hover:border-accent-muted'
+                        }`}
+                      >
+                        {character.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+                  선택한 인물의 고정 시드와 외형 DNA를 반영합니다. 초상화를 지우고 다시 만들어도 DNA는 유지됩니다.
+                </p>
+              </div>
+            )}
             <textarea
               id="chapter-image-prompt"
               value={imagePrompt}

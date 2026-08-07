@@ -247,6 +247,7 @@ export type AIImageRequest = {
   negativePrompt?: string;
   style?: 'anime' | 'realistic' | 'fantasy' | 'watercolor';
   aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3';
+  seed?: number;
 };
 
 export type AIImageResponse = {
