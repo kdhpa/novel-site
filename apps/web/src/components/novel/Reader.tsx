@@ -4,9 +4,17 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { Dialog } from '@headlessui/react';
 import { isOptimizableImageSource } from '@/lib/image-hosts';
 import { ArrowLeft, ChevronLeft, ChevronRight, List, Minus, Plus, Settings, X } from 'lucide-react';
+import CommentSection from '@/components/novel/CommentSection';
+import {
+  accumulateNextChapterScroll,
+  isPageAtBottom,
+  NEXT_CHAPTER_SCROLL_THRESHOLD,
+  NEXT_CHAPTER_TOUCH_THRESHOLD,
+} from '@/lib/reader-navigation';
 
 interface ReaderChapter {
   id: string;
@@ -22,6 +30,7 @@ interface ReaderProps {
   chapter: ReaderChapter;
   prevChapterId?: string;
   nextChapterId?: string;
+  commentsEnabled?: boolean;
 }
 
 type ReaderTheme = 'dark' | 'light' | 'sepia';
@@ -78,6 +87,12 @@ function normalizeLightboxImageSource(source: string) {
   return source;
 }
 
+function isReaderControlTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(
+    target.closest('a, button, input, textarea, select, [contenteditable="true"]'),
+  );
+}
+
 function useStoredNumber(key: string, fallback: number, min: number, max: number) {
   return useSyncExternalStore(
     subscribeToReaderSettings,
@@ -110,7 +125,14 @@ const panelClass: Record<ReaderTheme, string> = {
   sepia: 'border-[#dfd1bd] bg-[#f8f0e2]/95 text-[#2e241b]',
 };
 
-export default function Reader({ novelId, chapter, prevChapterId, nextChapterId }: ReaderProps) {
+export default function Reader({
+  novelId,
+  chapter,
+  prevChapterId,
+  nextChapterId,
+  commentsEnabled = false,
+}: ReaderProps) {
+  const router = useRouter();
   const { data: session } = useSession();
   const fontSize = useStoredNumber('reader-fontSize', DEFAULT_FONT_SIZE, 14, 28);
   const lineHeight = useStoredNumber('reader-lineHeight', DEFAULT_LINE_HEIGHT, 1.4, 2.4);
@@ -121,8 +143,22 @@ export default function Reader({ novelId, chapter, prevChapterId, nextChapterId 
   const [isNavVisible, setIsNavVisible] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [isAtReaderEnd, setIsAtReaderEnd] = useState(false);
+  const [nextScrollProgress, setNextScrollProgress] = useState(0);
+  const [isNavigatingToNext, setIsNavigatingToNext] = useState(false);
   const lastScrollY = useRef(0);
   const articleRef = useRef<HTMLElement | null>(null);
+  const isAtReaderEndRef = useRef(false);
+  const nextScrollProgressRef = useRef(0);
+  const nextScrollArmedAtRef = useRef(0);
+  const touchStartYRef = useRef<number | null>(null);
+  const touchStartedAtEndRef = useRef(false);
+  const isNavigatingToNextRef = useRef(false);
+  const autoNavigationLockedRef = useRef(false);
+
+  useEffect(() => {
+    autoNavigationLockedRef.current = isSettingsOpen || Boolean(lightboxImage);
+  }, [isSettingsOpen, lightboxImage]);
 
   const saveNumber = (key: string, value: number) => {
     localStorage.setItem(key, String(value));
@@ -159,6 +195,18 @@ export default function Reader({ novelId, chapter, prevChapterId, nextChapterId 
     openInlineIllustration(target);
   }, [openInlineIllustration]);
 
+  const navigateToNextChapter = useCallback(() => {
+    if (!nextChapterId || isNavigatingToNextRef.current) return;
+    isNavigatingToNextRef.current = true;
+    setIsNavigatingToNext(true);
+    router.push(`/novels/${novelId}/${nextChapterId}`);
+  }, [nextChapterId, novelId, router]);
+
+  useEffect(() => {
+    if (!nextChapterId) return;
+    router.prefetch(`/novels/${novelId}/${nextChapterId}`);
+  }, [nextChapterId, novelId, router]);
+
   useEffect(() => {
     if (!session?.user) return;
 
@@ -194,6 +242,97 @@ export default function Reader({ novelId, chapter, prevChapterId, nextChapterId 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!nextChapterId) {
+      isAtReaderEndRef.current = false;
+      nextScrollProgressRef.current = 0;
+      return;
+    }
+
+    const pageIsAtBottom = () => isPageAtBottom({
+      viewportHeight: window.innerHeight,
+      scrollY: window.scrollY,
+      scrollHeight: document.documentElement.scrollHeight,
+    });
+
+    const resetProgress = () => {
+      nextScrollProgressRef.current = 0;
+      setNextScrollProgress(0);
+    };
+
+    const syncEndState = () => {
+      const atEnd = pageIsAtBottom();
+      if (atEnd === isAtReaderEndRef.current) return;
+      isAtReaderEndRef.current = atEnd;
+      setIsAtReaderEnd(atEnd);
+      resetProgress();
+      if (atEnd) nextScrollArmedAtRef.current = Date.now() + 450;
+    };
+
+    const handleExtraWheel = (event: WheelEvent) => {
+      if (
+        autoNavigationLockedRef.current
+        || isReaderControlTarget(event.target)
+        || Date.now() < nextScrollArmedAtRef.current
+      ) return;
+
+      if (!pageIsAtBottom()) {
+        syncEndState();
+        return;
+      }
+
+      const progress = accumulateNextChapterScroll(
+        nextScrollProgressRef.current,
+        event.deltaY,
+      );
+      nextScrollProgressRef.current = progress;
+      setNextScrollProgress(progress);
+      if (progress >= NEXT_CHAPTER_SCROLL_THRESHOLD) navigateToNextChapter();
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (autoNavigationLockedRef.current || isReaderControlTarget(event.target)) {
+        touchStartYRef.current = null;
+        touchStartedAtEndRef.current = false;
+        return;
+      }
+      touchStartYRef.current = event.touches[0]?.clientY ?? null;
+      touchStartedAtEndRef.current = pageIsAtBottom();
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      const startY = touchStartYRef.current;
+      const endY = event.changedTouches[0]?.clientY;
+      const startedAtEnd = touchStartedAtEndRef.current;
+      touchStartYRef.current = null;
+      touchStartedAtEndRef.current = false;
+      if (
+        startY === null
+        || endY === undefined
+        || !startedAtEnd
+        || !pageIsAtBottom()
+        || Date.now() < nextScrollArmedAtRef.current
+      ) return;
+      if (startY - endY >= NEXT_CHAPTER_TOUCH_THRESHOLD) navigateToNextChapter();
+    };
+
+    syncEndState();
+    const resizeObserver = new ResizeObserver(syncEndState);
+    resizeObserver.observe(document.body);
+    window.addEventListener('scroll', syncEndState, { passive: true });
+    window.addEventListener('wheel', handleExtraWheel, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('scroll', syncEndState);
+      window.removeEventListener('wheel', handleExtraWheel);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [navigateToNextChapter, nextChapterId]);
 
   const sanitizedContent = chapter.content;
   const hasInlineAiImage = Boolean(chapter.aiImage && sanitizedContent.includes(chapter.aiImage));
@@ -286,6 +425,56 @@ export default function Reader({ novelId, chapter, prevChapterId, nextChapterId 
           onKeyDown={handleContentKeyDown}
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
+
+        {commentsEnabled && (
+          <div className="mt-16 text-zinc-200 [color-scheme:dark]">
+            <CommentSection novelId={novelId} chapterId={chapter.id} />
+          </div>
+        )}
+
+        <section
+          className="mt-8 rounded-lg border border-current/10 px-5 py-6 text-center"
+          aria-live="polite"
+        >
+          {nextChapterId ? (
+            <>
+              <p className="text-sm font-semibold">
+                {isNavigatingToNext
+                  ? '다음 화로 이동하는 중입니다.'
+                  : isAtReaderEnd
+                    ? '한 번 더 아래로 스크롤하면 다음 화로 이동합니다.'
+                    : '아래에서 다음 화로 이어집니다.'}
+              </p>
+              <div className="mx-auto mt-3 h-1.5 max-w-56 overflow-hidden rounded-full bg-current/10">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-150"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (nextScrollProgress / NEXT_CHAPTER_SCROLL_THRESHOLD) * 100,
+                    )}%`,
+                  }}
+                />
+              </div>
+              <Link
+                href={`/novels/${novelId}/${nextChapterId}`}
+                className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+              >
+                바로 다음 화 보기 <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold">현재 공개된 마지막 화입니다.</p>
+              <Link
+                href={`/novels/${novelId}`}
+                className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline"
+              >
+                <List className="h-4 w-4" aria-hidden="true" /> 작품 목록으로
+              </Link>
+            </>
+          )}
+        </section>
       </main>
 
       {lightboxImage && (

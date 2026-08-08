@@ -14,6 +14,9 @@ const adminId = `e2e-admin-${randomUUID()}`;
 const novelTitle = `E2E 공개 작품 ${runId}`;
 const chapterTitle = '첫 번째 회차';
 const chapterText = '독자가 읽게 될 첫 문장입니다.';
+const secondChapterTitle = '두 번째 회차';
+const secondChapterText = '이어 읽기로 도착할 두 번째 문장입니다.';
+const chapterCommentText = `E2E 회차 댓글 ${runId}`;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 
 type ApiEnvelope<T> = {
@@ -51,6 +54,7 @@ async function logIn(page: Page, origin: string, email: string, callbackPath: st
 test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => {
   let novelId: string | undefined;
   let chapterId: string | undefined;
+  let secondChapterId: string | undefined;
 
   test.beforeAll(async () => {
     // E2E는 외부 메일 전달을 테스트하지 않는다. 실제 로그인 정책은 그대로 거치도록
@@ -124,6 +128,8 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
         `content:novel-write:${authorId}`,
         `content:chapter-write:${authorId}`,
         `review:submit:${authorId}`,
+        `comments:mutation:minute:${authorId}`,
+        `comments:mutation:day:${authorId}`,
       ];
       await pool.query('DELETE FROM rate_limit_buckets WHERE key = ANY($1::text[])', [rateLimitKeys]);
       await pool.query('DELETE FROM users WHERE email = ANY($1::text[])', [[authorEmail, adminEmail]]);
@@ -165,6 +171,17 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
       });
       const chapter = await expectApiData<{ id: string }>(chapterResponse);
       chapterId = chapter.id;
+
+      const secondChapterResponse = await authorPage.request.post(`/api/novels/${novelId}/chapters`, {
+        data: {
+          title: secondChapterTitle,
+          chapterNumber: 2,
+          content: `<p>${secondChapterText}</p>`,
+          isPublished: false,
+        },
+      });
+      const secondChapter = await expectApiData<{ id: string }>(secondChapterResponse);
+      secondChapterId = secondChapter.id;
 
       const reviewResponse = await authorPage.request.post(`/api/novels/${novelId}/submit-review`);
       const submittedNovel = await expectApiData<{ approvalStatus: string }>(reviewResponse);
@@ -216,6 +233,29 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
       await expect(
         readerPage.locator('article.reader-content').getByText(chapterText, { exact: true }),
       ).toBeVisible();
+      await expect(readerPage.getByRole('heading', { name: '회차 댓글' })).toBeVisible();
+      await expect(readerPage.getByText('댓글을 작성하려면')).toBeVisible();
+
+      await readerPage.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await readerPage.waitForTimeout(600);
+      await expect(
+        readerPage.getByText('한 번 더 아래로 스크롤하면 다음 화로 이동합니다.'),
+      ).toBeVisible();
+      await readerPage.mouse.move(600, 400);
+      await readerPage.mouse.wheel(0, 220);
+      await readerPage.waitForURL(`${WEB_URL}/novels/${novelId}/${secondChapterId}`);
+      await expect(
+        readerPage.getByRole('heading', { level: 1, name: secondChapterTitle }),
+      ).toBeVisible();
+      await expect(
+        readerPage.locator('article.reader-content').getByText(secondChapterText, { exact: true }),
+      ).toBeVisible();
+
+      await authorPage.goto(`${WEB_URL}/novels/${novelId}/${chapterId}`);
+      const chapterCommentInput = authorPage.getByPlaceholder('이 회차에 대한 생각을 남겨 주세요.');
+      await chapterCommentInput.fill(chapterCommentText);
+      await authorPage.getByRole('button', { name: '댓글 등록' }).click();
+      await expect(authorPage.getByText(chapterCommentText, { exact: true })).toBeVisible();
 
       await authorPage.goto(`${WEB_URL}/novels/${novelId}`);
       await authorPage.getByRole('button', { name: '북마크 추가' }).click();

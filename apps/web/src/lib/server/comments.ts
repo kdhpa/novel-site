@@ -16,6 +16,7 @@ const commentContentSchema = z
 export const commentCreateSchema = z
   .object({
     content: commentContentSchema,
+    chapterId: z.string().trim().min(1).max(100).optional(),
     parentId: z.string().trim().min(1).max(100).optional(),
     clientRequestId: z.string().trim().min(16).max(100).optional(),
   })
@@ -38,14 +39,20 @@ export function buildIdempotentCommentId(userId: string, clientRequestId: string
 
 type ReplyParent = {
   novelId: string;
+  chapterId: string | null;
   parentId: string | null;
   content: string;
 };
 
-export function isEligibleReplyParent(parent: ReplyParent | null, novelId: string) {
+export function isEligibleReplyParent(
+  parent: ReplyParent | null,
+  novelId: string,
+  chapterId?: string,
+) {
   return Boolean(
     parent &&
       parent.novelId === novelId &&
+      parent.chapterId === (chapterId ?? null) &&
       parent.parentId === null &&
       parent.content !== DELETED_COMMENT_CONTENT,
   );

@@ -44,6 +44,7 @@ type CommentListResponse = {
 
 type CommentSectionProps = {
   novelId: string;
+  chapterId?: string;
 };
 
 const PAGE_SIZE = 10;
@@ -189,7 +190,7 @@ function CommentBody({
   );
 }
 
-export default function CommentSection({ novelId }: CommentSectionProps) {
+export default function CommentSection({ novelId, chapterId }: CommentSectionProps) {
   const { data: session, status } = useSession();
   const latestRequestRef = useRef(0);
   const pendingMutationRef = useRef<string | null>(null);
@@ -211,6 +212,11 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
   const [commentToDelete, setCommentToDelete] = useState<CommentItem | null>(null);
   const [replyLoadingId, setReplyLoadingId] = useState<string | null>(null);
   const [replyLoadErrors, setReplyLoadErrors] = useState<Record<string, string>>({});
+  const commentsEndpoint = `/api/novels/${novelId}/comments`;
+  const chapterQuery = chapterId ? `chapterId=${encodeURIComponent(chapterId)}&` : '';
+  const loginCallback = chapterId
+    ? `/novels/${novelId}/${chapterId}#댓글`
+    : `/novels/${novelId}#댓글`;
 
   const loadComments = useCallback(async (targetPage: number) => {
     const requestId = latestRequestRef.current + 1;
@@ -220,7 +226,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
 
     try {
       const response = await fetch(
-        `/api/novels/${novelId}/comments?page=${targetPage}&limit=${PAGE_SIZE}`,
+        `${commentsEndpoint}?${chapterQuery}page=${targetPage}&limit=${PAGE_SIZE}`,
         { cache: 'no-store' },
       );
       const result = await readApiResult(response, '댓글을 불러오지 못했습니다.');
@@ -236,7 +242,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     } finally {
       if (latestRequestRef.current === requestId) setIsLoading(false);
     }
-  }, [novelId]);
+  }, [chapterQuery, commentsEndpoint]);
 
   useEffect(() => {
     setComments([]);
@@ -265,10 +271,14 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     const clientRequestId = crypto.randomUUID();
 
     try {
-      const response = await fetch(`/api/novels/${novelId}/comments`, {
+      const response = await fetch(commentsEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, clientRequestId }),
+        body: JSON.stringify({
+          content,
+          clientRequestId,
+          ...(chapterId ? { chapterId } : {}),
+        }),
       });
       await readApiResult(response, '댓글 작성에 실패했습니다.');
       setContent('');
@@ -289,13 +299,14 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     const clientRequestId = crypto.randomUUID();
 
     try {
-      const response = await fetch(`/api/novels/${novelId}/comments`, {
+      const response = await fetch(commentsEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: replyContent,
           parentId: replyingTo.id,
           clientRequestId,
+          ...(chapterId ? { chapterId } : {}),
         }),
       });
       await readApiResult(response, '답글 작성에 실패했습니다.');
@@ -381,7 +392,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
     try {
       const offset = comment.replies?.length || 0;
       const response = await fetch(
-        `/api/novels/${novelId}/comments?parentId=${encodeURIComponent(comment.id)}&offset=${offset}&limit=20`,
+        `${commentsEndpoint}?${chapterQuery}parentId=${encodeURIComponent(comment.id)}&offset=${offset}&limit=20`,
         { cache: 'no-store' },
       );
       const result = await readApiResult(response, '답글을 불러오지 못했습니다.');
@@ -448,7 +459,8 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
         <div>
           <h2 id="comments-heading" className="flex items-center gap-2 font-bold text-white">
-            <MessageCircle className="h-5 w-5 text-accent" aria-hidden="true" /> 댓글
+            <MessageCircle className="h-5 w-5 text-accent" aria-hidden="true" />
+            {chapterId ? '회차 댓글' : '댓글'}
           </h2>
           <p className="mt-1 text-sm text-zinc-500">총 {total.toLocaleString()}개</p>
         </div>
@@ -465,7 +477,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
             onChange={(event) => setContent(event.target.value)}
             rows={3}
             maxLength={MAX_CONTENT_LENGTH}
-            placeholder="작품에 대한 생각을 남겨 주세요."
+            placeholder={chapterId ? '이 회차에 대한 생각을 남겨 주세요.' : '작품에 대한 생각을 남겨 주세요.'}
             className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-primary focus:ring-1 focus:ring-primary"
             aria-invalid={Boolean(formError)}
             aria-describedby={formError ? 'comment-form-error' : 'comment-form-count'}
@@ -481,7 +493,7 @@ export default function CommentSection({ novelId }: CommentSectionProps) {
       ) : status === 'unauthenticated' ? (
         <div className="border-b border-border px-4 py-4 text-sm text-zinc-500 sm:px-5">
           댓글을 작성하려면{' '}
-          <Link href={`/login?callbackUrl=${encodeURIComponent(`/novels/${novelId}#댓글`)}`} className="font-medium text-accent hover:underline">
+          <Link href={`/login?callbackUrl=${encodeURIComponent(loginCallback)}`} className="font-medium text-accent hover:underline">
             로그인
           </Link>
           이 필요합니다.

@@ -218,6 +218,7 @@ export default async function ChapterReaderPage({ params }: PageProps) {
         }}
         prevChapterId={chapter.prevChapterId}
         nextChapterId={chapter.nextChapterId}
+        commentsEnabled={isPublic}
       />
     </>
   );

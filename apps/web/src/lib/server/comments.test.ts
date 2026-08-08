@@ -35,26 +35,46 @@ describe('comment schemas', () => {
       buildIdempotentCommentId('user-a', clientRequestId),
     );
   });
+
+  it('회차 댓글은 유효한 chapterId만 받는다', () => {
+    expect(commentCreateSchema.parse({ content: '회차 댓글', chapterId: 'chapter-a' })).toEqual({
+      content: '회차 댓글',
+      chapterId: 'chapter-a',
+    });
+    expect(() => commentCreateSchema.parse({ content: '회차 댓글', chapterId: '' })).toThrow();
+  });
 });
 
 describe('reply parent policy', () => {
   it('같은 작품의 최상위 일반 댓글에만 답글을 허용한다', () => {
     expect(isEligibleReplyParent(
-      { novelId: 'novel-a', parentId: null, content: '원댓글' },
+      { novelId: 'novel-a', chapterId: null, parentId: null, content: '원댓글' },
       'novel-a',
     )).toBe(true);
     expect(isEligibleReplyParent(
-      { novelId: 'novel-b', parentId: null, content: '다른 작품 댓글' },
+      { novelId: 'novel-b', chapterId: null, parentId: null, content: '다른 작품 댓글' },
       'novel-a',
     )).toBe(false);
     expect(isEligibleReplyParent(
-      { novelId: 'novel-a', parentId: 'root', content: '이미 답글' },
+      { novelId: 'novel-a', chapterId: null, parentId: 'root', content: '이미 답글' },
       'novel-a',
     )).toBe(false);
     expect(isEligibleReplyParent(
-      { novelId: 'novel-a', parentId: null, content: DELETED_COMMENT_CONTENT },
+      { novelId: 'novel-a', chapterId: null, parentId: null, content: DELETED_COMMENT_CONTENT },
       'novel-a',
     )).toBe(false);
+  });
+
+  it('회차 댓글의 답글은 같은 회차에서만 허용한다', () => {
+    const chapterComment = {
+      novelId: 'novel-a',
+      chapterId: 'chapter-a',
+      parentId: null,
+      content: '1화 댓글',
+    };
+    expect(isEligibleReplyParent(chapterComment, 'novel-a', 'chapter-a')).toBe(true);
+    expect(isEligibleReplyParent(chapterComment, 'novel-a', 'chapter-b')).toBe(false);
+    expect(isEligibleReplyParent(chapterComment, 'novel-a')).toBe(false);
   });
 });
 

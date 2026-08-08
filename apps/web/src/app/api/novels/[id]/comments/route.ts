@@ -40,6 +40,7 @@ const commentResponseSelect = {
 const idempotentCommentSelect = {
   ...commentResponseSelect,
   novelId: true,
+  chapterId: true,
   userId: true,
 } as const;
 
@@ -62,12 +63,14 @@ function matchesIdempotentRequest(
   comment: NonNullable<IdempotentComment>,
   input: {
     novelId: string;
+    chapterId?: string;
     userId: string;
     content: string;
     parentId?: string;
   },
 ) {
   return comment.novelId === input.novelId
+    && comment.chapterId === (input.chapterId ?? null)
     && comment.userId === input.userId
     && comment.content === input.content
     && comment.parentId === (input.parentId ?? null);
@@ -96,7 +99,7 @@ function parseNonNegativeInteger(value: string | null, fallback: number, max?: n
   return max ? Math.min(parsed, max) : parsed;
 }
 
-async function assertCanReadComments(novelId: string) {
+async function assertCanReadComments(novelId: string, chapterId?: string) {
   const novel = await prisma.novel.findUnique({
     where: { id: novelId },
     select: {
@@ -107,25 +110,37 @@ async function assertCanReadComments(novelId: string) {
   });
 
   if (!novel) throw new ApiError(404, '작품을 찾을 수 없습니다.');
-  if (novel.isPublished && novel.approvalStatus === 'APPROVED') return;
+  if (!novel.isPublished || novel.approvalStatus !== 'APPROVED') {
+    const session = await auth();
+    const isAuthor = session?.user?.id === novel.authorId;
+    const isAdmin = Boolean(
+      session?.user?.id && !isAuthor && (await isCurrentAdmin(session.user.id)),
+    );
 
-  const session = await auth();
-  const isAuthor = session?.user?.id === novel.authorId;
-  const isAdmin = Boolean(
-    session?.user?.id && !isAuthor && (await isCurrentAdmin(session.user.id)),
-  );
+    if (!isAuthor && !isAdmin) {
+      throw new ApiError(404, '작품을 찾을 수 없습니다.');
+    }
+  }
 
-  if (!isAuthor && !isAdmin) {
-    throw new ApiError(404, '작품을 찾을 수 없습니다.');
+  if (chapterId) {
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, novelId, isPublished: true },
+      select: { id: true },
+    });
+    if (!chapter) throw new ApiError(404, '회차를 찾을 수 없습니다.');
   }
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    await assertCanReadComments(id);
-
     const { searchParams } = new URL(request.url);
+    const chapterId = searchParams.get('chapterId')?.trim() || undefined;
+    if (chapterId && chapterId.length > 100) {
+      throw new ApiError(400, '회차 정보를 확인해 주세요.');
+    }
+    await assertCanReadComments(id, chapterId);
+    const commentScope = { novelId: id, chapterId: chapterId ?? null };
     const parentId = searchParams.get('parentId')?.trim();
 
     if (parentId) {
@@ -137,12 +152,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         MAX_REPLY_PAGE_SIZE,
       );
       const parent = await prisma.comment.findFirst({
-        where: { id: parentId, novelId: id, parentId: null, isHidden: false },
+        where: { id: parentId, ...commentScope, parentId: null, isHidden: false },
         select: { id: true },
       });
       if (!parent) throw new ApiError(404, '댓글을 찾을 수 없습니다.');
 
-      const where = { novelId: id, parentId, isHidden: false };
+      const where = { ...commentScope, parentId, isHidden: false };
       const [replies, total] = await Promise.all([
         prisma.comment.findMany({
           where,
@@ -179,7 +194,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       DEFAULT_PAGE_SIZE,
       MAX_PAGE_SIZE,
     );
-    const where = { novelId: id, parentId: null, isHidden: false } as const;
+    const where = { ...commentScope, parentId: null, isHidden: false };
 
     const [comments, total] = await Promise.all([
       prisma.comment.findMany({
@@ -248,6 +263,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       : null;
     const idempotentInput = {
       novelId: id,
+      chapterId: body.chapterId,
       userId: user.id,
       content: body.content,
       parentId: body.parentId,
@@ -278,13 +294,32 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw new ApiError(404, '댓글을 작성할 수 있는 작품을 찾을 수 없습니다.');
     }
 
+    if (body.chapterId) {
+      const chapter = await prisma.chapter.findFirst({
+        where: {
+          id: body.chapterId,
+          novelId: id,
+          isPublished: true,
+        },
+        select: { id: true },
+      });
+      if (!chapter) {
+        throw new ApiError(404, '댓글을 작성할 수 있는 회차를 찾을 수 없습니다.');
+      }
+    }
+
     if (body.parentId) {
       const parent = await prisma.comment.findFirst({
-        where: { id: body.parentId, novelId: id, isHidden: false },
-        select: { novelId: true, parentId: true, content: true },
+        where: {
+          id: body.parentId,
+          novelId: id,
+          chapterId: body.chapterId ?? null,
+          isHidden: false,
+        },
+        select: { novelId: true, chapterId: true, parentId: true, content: true },
       });
 
-      if (!isEligibleReplyParent(parent, id)) {
+      if (!isEligibleReplyParent(parent, id, body.chapterId)) {
         throw new ApiError(400, '답글을 작성할 수 있는 댓글을 찾을 수 없습니다.');
       }
     }
@@ -295,6 +330,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         data: {
           ...(idempotentId ? { id: idempotentId } : {}),
           novelId: id,
+          chapterId: body.chapterId,
           userId: user.id,
           content: body.content,
           parentId: body.parentId,

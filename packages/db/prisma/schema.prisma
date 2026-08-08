@@ -235,6 +235,7 @@ model Chapter {
 
   novelId String
   novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  comments Comment[]
 
   @@unique([novelId, chapterNumber])
   @@index([novelId])
@@ -330,6 +331,9 @@ model Comment {
   user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   novel   Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
 
+  chapterId String?
+  chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
   parentId String?
   parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies  Comment[] @relation("CommentReplies")
@@ -338,6 +342,7 @@ model Comment {
   @@index([userId])
   @@index([parentId, createdAt, id])
   @@index([novelId, parentId, createdAt, id])
+  @@index([novelId, chapterId, parentId, createdAt, id])
   @@index([isHidden, createdAt, id])
   @@map("comments")
 }

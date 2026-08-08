@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   assertCommentMutationRateLimit: vi.fn(),
   novelFindUnique: vi.fn(),
   novelFindFirst: vi.fn(),
+  chapterFindFirst: vi.fn(),
   commentFindMany: vi.fn(),
   commentCount: vi.fn(),
   commentFindUnique: vi.fn(),
@@ -33,6 +34,9 @@ vi.mock('@/lib/prisma', () => ({
     novel: {
       findUnique: mocks.novelFindUnique,
       findFirst: mocks.novelFindFirst,
+    },
+    chapter: {
+      findFirst: mocks.chapterFindFirst,
     },
     comment: {
       findMany: mocks.commentFindMany,
@@ -85,10 +89,40 @@ describe('comments GET', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.commentFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { novelId: 'novel-a', parentId: null, isHidden: false },
+      where: { novelId: 'novel-a', chapterId: null, parentId: null, isHidden: false },
       skip: 10,
       take: 10,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    }));
+  });
+
+  it('회차 댓글은 해당 회차로만 범위를 제한한다', async () => {
+    mocks.novelFindUnique.mockResolvedValue({
+      authorId: 'author-a',
+      isPublished: true,
+      approvalStatus: 'APPROVED',
+    });
+    mocks.chapterFindFirst.mockResolvedValue({ id: 'chapter-a' });
+
+    const response = await GET(
+      new NextRequest(
+        'https://novelverse.test/api/novels/novel-a/comments?chapterId=chapter-a',
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.chapterFindFirst).toHaveBeenCalledWith({
+      where: { id: 'chapter-a', novelId: 'novel-a', isPublished: true },
+      select: { id: true },
+    });
+    expect(mocks.commentFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        novelId: 'novel-a',
+        chapterId: 'chapter-a',
+        parentId: null,
+        isHidden: false,
+      },
     }));
   });
 });
@@ -99,6 +133,7 @@ describe('comments POST', () => {
     mocks.commentFindUnique.mockResolvedValue({
       id: buildIdempotentCommentId('user-a', clientRequestId),
       novelId: 'novel-a',
+      chapterId: null,
       userId: 'user-a',
       content: '좋은 작품이에요.',
       parentId: null,
@@ -126,6 +161,7 @@ describe('comments POST', () => {
     mocks.commentFindUnique.mockResolvedValue({
       id: buildIdempotentCommentId('user-a', clientRequestId),
       novelId: 'novel-a',
+      chapterId: null,
       userId: 'user-a',
       content: '원래 댓글',
       parentId: null,
@@ -180,6 +216,7 @@ describe('comments POST', () => {
     const existing = {
       id: buildIdempotentCommentId('user-a', clientRequestId),
       novelId: 'novel-a',
+      chapterId: null,
       userId: 'user-a',
       content: '동시 요청 댓글',
       parentId: null,
@@ -206,6 +243,37 @@ describe('comments POST', () => {
     expect(mocks.commentFindUnique).toHaveBeenCalledTimes(2);
   });
 
+  it('공개된 해당 회차에 댓글을 작성한다', async () => {
+    mocks.novelFindFirst.mockResolvedValue({ id: 'novel-a' });
+    mocks.chapterFindFirst.mockResolvedValue({ id: 'chapter-a' });
+    mocks.commentCreate.mockResolvedValue({
+      id: 'comment-a',
+      content: '1화가 재미있어요.',
+      parentId: null,
+      createdAt: new Date('2026-08-08T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-08T00:00:00.000Z'),
+      user: { id: 'user-a', nickname: '독자', image: null },
+    });
+
+    const response = await POST(
+      jsonRequest(
+        'https://novelverse.test/api/novels/novel-a/comments',
+        'POST',
+        { content: '1화가 재미있어요.', chapterId: 'chapter-a' },
+      ),
+      { params: Promise.resolve({ id: 'novel-a' }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.commentCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        novelId: 'novel-a',
+        chapterId: 'chapter-a',
+        content: '1화가 재미있어요.',
+      }),
+    }));
+  });
+
   it('다른 작품이나 중첩 댓글 ID를 답글 부모로 사용할 수 없다', async () => {
     mocks.novelFindFirst.mockResolvedValue({ id: 'novel-a' });
     mocks.commentFindFirst.mockResolvedValue({
@@ -225,7 +293,12 @@ describe('comments POST', () => {
 
     expect(response.status).toBe(400);
     expect(mocks.commentFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'foreign-comment', novelId: 'novel-a', isHidden: false },
+      where: {
+        id: 'foreign-comment',
+        novelId: 'novel-a',
+        chapterId: null,
+        isHidden: false,
+      },
     }));
     expect(mocks.commentCreate).not.toHaveBeenCalled();
 

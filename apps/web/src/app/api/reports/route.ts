@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
                 id: true,
                 userId: true,
                 novelId: true,
+                chapterId: true,
                 parentId: true,
                 content: true,
                 createdAt: true,
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
         ? {
             authorId: target.userId,
             novelId: target.novelId,
+            chapterId: target.chapterId,
             parentId: target.parentId,
             content: target.content.slice(0, 1_000),
             createdAt: target.createdAt.toISOString(),
