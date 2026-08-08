@@ -196,7 +196,10 @@ test.describe('작가 작성부터 운영 심사와 독자 공개까지', () => 
       await expect(adminPage).toHaveURL(`${OPS_URL}/reviews/${novelId}`);
       await expect(adminPage.getByRole('heading', { name: novelTitle })).toBeVisible();
 
-      await adminPage.getByRole('link', { name: '전체 본문 열기' }).click();
+      await adminPage.locator(
+        `a[href="/reviews/${novelId}/chapters/${chapterId}"]`,
+        { hasText: '전체 본문 열기' },
+      ).click();
       await expect(adminPage).toHaveURL(`${OPS_URL}/reviews/${novelId}/chapters/${chapterId}`);
       await expect(adminPage.getByRole('heading', { level: 1 })).toContainText(chapterTitle);
       await expect(adminPage.getByText(chapterText, { exact: true })).toBeVisible();
